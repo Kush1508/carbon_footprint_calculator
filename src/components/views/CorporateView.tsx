@@ -860,10 +860,10 @@ export function CorporateView({
                 }
                 className="w-full text-xs bg-white border border-zinc-200 rounded-lg px-2.5 py-2 font-medium text-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-400"
               >
-                <option value="us_egrid">US Cloud (0.380 kg/kWh)</option>
-                <option value="eu_residual">EU Clean Grid (0.240 kg/kWh)</option>
+                <option value="us_egrid">US Cloud (0.386 kg/kWh)</option>
+                <option value="eu_residual">EU Clean Grid (0.255 kg/kWh)</option>
                 <option value="uk_desnz">UK Datacenters (0.207 kg/kWh)</option>
-                <option value="india_cea">India Central (0.720 kg/kWh)</option>
+                <option value="india_cea">India Central (0.716 kg/kWh)</option>
               </select>
               <span className="text-[10px] text-zinc-400 font-mono">Marginal cloud grid factor</span>
             </div>

@@ -112,9 +112,9 @@ export function Navbar({
               onChange={(e) => onSelectGridKey(e.target.value as RegionalGridKey)}
               className="bg-transparent font-medium text-zinc-800 focus:outline-none cursor-pointer text-xs pr-1"
             >
-              <option value="india_cea">India CEA (0.720)</option>
-              <option value="us_egrid">US eGRID (0.380)</option>
-              <option value="eu_residual">EU-27 AIB (0.240)</option>
+              <option value="india_cea">India CEA (0.716)</option>
+              <option value="us_egrid">US eGRID (0.386)</option>
+              <option value="eu_residual">EU-27 AIB (0.255)</option>
               <option value="uk_desnz">UK DESNZ (0.207)</option>
             </select>
           </div>

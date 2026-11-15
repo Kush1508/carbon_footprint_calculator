@@ -6,7 +6,7 @@ export const REGIONAL_GRID_PRESETS: Record<RegionalGridKey, RegionalGridPreset> 
     id: 'india_cea',
     label: 'India CEA (CO₂ Baseline Database v19)',
     country: 'India',
-    emissionFactorKwh: 0.720, // kg CO2e / kWh
+    emissionFactorKwh: 0.716, // kg CO2e / kWh
     residualFactorKwh: 0.810, // residual mix accounting for non-REC grid share
     citation: 'Central Electricity Authority (CEA) of India, CO2 Baseline Database for the Indian Power Sector, User Guide Version 19.0 (2023)',
     sourceAuthority: 'Ministry of Power, Govt. of India / CEA',
@@ -16,7 +16,7 @@ export const REGIONAL_GRID_PRESETS: Record<RegionalGridKey, RegionalGridPreset> 
     id: 'us_egrid',
     label: 'US EPA eGRID (National US Subregion Average)',
     country: 'United States',
-    emissionFactorKwh: 0.380, // kg CO2e / kWh
+    emissionFactorKwh: 0.386, // kg CO2e / kWh
     residualFactorKwh: 0.442, // Green-e residual mix
     citation: 'US Environmental Protection Agency (EPA), Emissions & Generation Resource Integrated Database (eGRID2022, Released Jan 2024)',
     sourceAuthority: 'US EPA / Green-e Residual Mix Database',
@@ -26,7 +26,7 @@ export const REGIONAL_GRID_PRESETS: Record<RegionalGridKey, RegionalGridPreset> 
     id: 'eu_residual',
     label: 'EU-27 AIB European Residual Mix (Location/Residual)',
     country: 'European Union',
-    emissionFactorKwh: 0.240, // kg CO2e / kWh average grid
+    emissionFactorKwh: 0.255, // kg CO2e / kWh average grid
     residualFactorKwh: 0.385, // AIB European Residual Mix
     citation: 'Association of Issuing Bodies (AIB), European Residual Mixes 2022 (V1.0), Published May 2023',
     sourceAuthority: 'AIB / European Energy Certificate System (EECS)',

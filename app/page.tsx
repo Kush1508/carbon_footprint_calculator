@@ -1,5 +1,6 @@
 import React from 'react';
 import App from '@/App';
+import { CarbonCreditingSuite } from '@/components/sections/CarbonCreditingSuite';
 import Link from 'next/link';
 import {
   ShieldCheck,
@@ -104,6 +105,9 @@ export default function Page() {
 
       {/* Interactive Client-Side Calculator Application */}
       <App />
+
+      {/* Registry-Grade Carbon Credit Eligibility & Issuance Suite */}
+      <CarbonCreditingSuite />
 
       {/* Semantic Server-Side Rendered Content for AI Agents & Search Engines */}
       <section
