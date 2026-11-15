@@ -28,7 +28,9 @@ const calculateQuerySchema = z.object({
   hasSewage: z.coerce.boolean().default(true),
   wasteKg: z.coerce.number().min(0).default(0),
   wasteRoute: z.enum(['landfill', 'compost', 'recycling']).default('landfill'),
+  cookingFuel: z.enum(['lpg', 'png', 'biogas', 'electric_induction']).default('lpg'),
   lpgKg: z.coerce.number().min(0).default(0),
+  pngM3: z.coerce.number().min(0).default(0),
   petrolLiters: z.coerce.number().min(0).default(0),
   dieselLiters: z.coerce.number().min(0).default(0),
   fuelLiters: z.coerce.number().min(0).optional(),
@@ -354,20 +356,42 @@ function executeCalculation(params: CalculateParams) {
       totalKg += wasteKgAnnualPersonal;
     }
 
-    // 4. LPG Cooking Gas (Allocated per resident)
-    const lpgKgAnnualTotal = params.lpgKg * FUEL_FACTORS.lpg.efKgPerUnit;
-    const lpgKgAnnualPersonal = lpgKgAnnualTotal / effectiveResidents;
-    if (params.lpgKg > 0) {
-      breakdown['lpg_cooking'] = {
-        kg_co2e: roundTo(lpgKgAnnualPersonal, 2),
-        t_co2e: roundTo(lpgKgAnnualPersonal / 1000, 4),
-        scope: 'Scope 1',
-        description: `${params.lpgKg} kg LPG × ${FUEL_FACTORS.lpg.efKgPerUnit} kg CO2e/kg ÷ ${effectiveResidents} residents`,
-      };
-      methodologies.push(
-        `LPG: (${params.lpgKg} kg × ${FUEL_FACTORS.lpg.efKgPerUnit} kg CO2e/kg) ÷ ${effectiveResidents} residents [Ref: IPCC 2006 Vol 2 Stationary Combustion]`
-      );
-      totalKg += lpgKgAnnualPersonal;
+    // 4. Multi-Fuel Cooking (LPG, PNG, Biogas, Electric Induction)
+    if (params.cookingFuel === 'png' || params.pngM3 > 0) {
+      const pngKgAnnualTotal = params.pngM3 * 2.020; // 2.020 kg CO2e / m3
+      const pngKgAnnualPersonal = pngKgAnnualTotal / effectiveResidents;
+      if (params.pngM3 > 0) {
+        breakdown['png_cooking'] = {
+          kg_co2e: roundTo(pngKgAnnualPersonal, 2),
+          t_co2e: roundTo(pngKgAnnualPersonal / 1000, 4),
+          scope: 'Scope 1',
+          description: `${params.pngM3} m³ PNG × 2.020 kg CO2e/m³ ÷ ${effectiveResidents} residents`,
+        };
+        methodologies.push(
+          `PNG Cooking: (${params.pngM3} m³ × 2.020 kg CO2e/m³) ÷ ${effectiveResidents} residents [Ref: IPCC 2006 Natural Gas]`
+        );
+        totalKg += pngKgAnnualPersonal;
+      }
+    } else if (params.cookingFuel === 'biogas') {
+      methodologies.push('Cooking: Biogas anaerobic digester is biogenic carbon neutral [IPCC]');
+    } else if (params.cookingFuel === 'electric_induction') {
+      methodologies.push('Cooking: Electric induction accounted for under electricity kWh');
+    } else {
+      // Default LPG
+      const lpgKgAnnualTotal = params.lpgKg * FUEL_FACTORS.lpg.efKgPerUnit;
+      const lpgKgAnnualPersonal = lpgKgAnnualTotal / effectiveResidents;
+      if (params.lpgKg > 0) {
+        breakdown['lpg_cooking'] = {
+          kg_co2e: roundTo(lpgKgAnnualPersonal, 2),
+          t_co2e: roundTo(lpgKgAnnualPersonal / 1000, 4),
+          scope: 'Scope 1',
+          description: `${params.lpgKg} kg LPG × ${FUEL_FACTORS.lpg.efKgPerUnit} kg CO2e/kg ÷ ${effectiveResidents} residents`,
+        };
+        methodologies.push(
+          `LPG: (${params.lpgKg} kg × ${FUEL_FACTORS.lpg.efKgPerUnit} kg CO2e/kg) ÷ ${effectiveResidents} residents [Ref: IPCC 2006 Vol 2 Stationary Combustion]`
+        );
+        totalKg += lpgKgAnnualPersonal;
+      }
     }
 
     // 5. Road Transport (Strict XOR: If fuelLiters provided, calculate fuel receipt)
