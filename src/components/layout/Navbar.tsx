@@ -35,24 +35,23 @@ export function Navbar({
   const activeGrid = REGIONAL_GRID_PRESETS[selectedGridKey];
 
   return (
-    <header className="sticky top-0 z-40 w-full h-14 border-b border-zinc-200/90 bg-white/90 backdrop-blur-md transition-all">
+    <nav className="w-full h-14 border-b border-zinc-200/90 bg-zinc-50/90 backdrop-blur-md transition-all">
       <div className="max-w-7xl mx-auto h-full px-2.5 sm:px-6 flex items-center justify-between gap-1.5 sm:gap-4">
-        {/* Brand & Platform Identity */}
+        {/* Workspace Scope Label */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <div className="w-7 h-7 rounded-lg bg-[#0F3A2E] flex items-center justify-center text-white shadow-sm font-mono font-bold text-xs tracking-tighter shrink-0">
-              CL
-            </div>
-            <div className="hidden xs:block">
-              <span className="font-bold text-xs sm:text-sm tracking-tight text-zinc-950 flex items-center gap-1">
-                CLIMATE-LEDGER™
-                <span className="hidden md:inline text-[10px] font-mono text-zinc-400 font-normal">v2.4</span>
+            <span className="font-mono font-bold text-xs px-2 py-1 rounded bg-[#0F3A2E] text-white">
+              AUDIT SUITE
+            </span>
+            <div className="hidden sm:block">
+              <span className="font-bold text-xs sm:text-sm tracking-tight text-zinc-900">
+                Institutional Workspace
               </span>
             </div>
           </div>
           <div className="hidden lg:flex items-center pl-2 border-l border-zinc-200">
             <Badge variant="methodology">
-              <ShieldCheck className="w-3 h-3 text-emerald-700" /> ISO 14064 & GHG Protocol
+              <ShieldCheck className="w-3 h-3 text-emerald-700" /> ISO 14064 &amp; GHG Protocol
             </Badge>
           </div>
         </div>
@@ -155,6 +154,6 @@ export function Navbar({
           </button>
         </div>
       </div>
-    </header>
+    </nav>
   );
 }

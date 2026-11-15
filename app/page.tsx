@@ -185,8 +185,8 @@ export default function Page() {
             </div>
           </div>
 
-          {/* Three Detailed Methodology Columns */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+          {/* Four Detailed Methodology Columns */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-12">
             {/* Household Column */}
             <article className="border border-zinc-200 rounded-xl p-5 bg-zinc-50/50">
               <div className="flex items-center gap-2 mb-3">
@@ -194,7 +194,7 @@ export default function Page() {
                   <Database className="w-4 h-4" />
                 </div>
                 <h2 className="text-base font-bold text-zinc-900">
-                  1. Household & Municipal Accounting
+                  1. Household &amp; Municipal Accounting
                 </h2>
               </div>
               <p className="text-xs text-zinc-600 mb-4 leading-relaxed">
@@ -210,7 +210,7 @@ export default function Page() {
                 </div>
 
                 <div className="bg-white p-2.5 rounded border border-zinc-200">
-                  <div className="font-semibold text-zinc-800 mb-1">Domestic Water Supply & Sewage:</div>
+                  <div className="font-semibold text-zinc-800 mb-1">Domestic Water Supply &amp; Sewage:</div>
                   <div className="text-zinc-600">E = m³ × (0.344 + 0.708) kg CO2e/m³</div>
                   <div className="text-[10px] text-zinc-400 mt-1">Pumping energy + aerobic wastewater digestion</div>
                 </div>
@@ -266,7 +266,7 @@ export default function Page() {
                   <Cpu className="w-4 h-4" />
                 </div>
                 <h2 className="text-base font-bold text-zinc-900">
-                  3. Corporate Scopes 1-3 & GSF SCI
+                  3. Corporate Scopes 1-3 &amp; GSF SCI
                 </h2>
               </div>
               <p className="text-xs text-zinc-600 mb-4 leading-relaxed">
@@ -291,6 +291,43 @@ export default function Page() {
                   <div className="font-semibold text-zinc-800 mb-1">Green Software Foundation SCI:</div>
                   <div className="text-zinc-600">E = (vCPU×0.012kW + RAM×0.0003kW) × PUE × EF</div>
                   <div className="text-[10px] text-zinc-400 mt-1">SCI = (E + M) / Functional Unit [ISO 21031]</div>
+                </div>
+              </div>
+            </article>
+
+            {/* Registry Crediting & Issuance Column */}
+            <article className="border border-zinc-200 rounded-xl p-5 bg-zinc-50/50">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="p-1.5 bg-emerald-100 rounded text-emerald-800">
+                  <Scale className="w-4 h-4" />
+                </div>
+                <h2 className="text-base font-bold text-zinc-900">
+                  4. Statutory Registry Crediting &amp; Issuance (Verra, Gold Standard &amp; BEE CCTS)
+                </h2>
+              </div>
+              <p className="text-xs text-zinc-600 mb-4 leading-relaxed">
+                Applies institutional carbon crediting methodologies (ISO 14064-2, Verra VM0042, CDM ACM0002,
+                and BEE CCTS) for baseline calculations, permanence buffer pools, and statutory carbon accounting.
+              </p>
+
+              <div className="space-y-3 font-mono text-[11px]">
+                <div className="bg-white p-2.5 rounded border border-zinc-200">
+                  <div className="font-semibold text-zinc-800 mb-1">Master Net Crediting Equation:</div>
+                  <div className="text-zinc-600">Net Verified Credits (tCO2e) = BE - PE - LE - Buffer</div>
+                  <div className="text-[10px] text-zinc-400 mt-1">ISO 14064-2: Baseline minus project emissions, leakage, and risk reserve</div>
+                </div>
+
+                <div className="bg-white p-2.5 rounded border border-zinc-200">
+                  <div className="font-semibold text-zinc-800 mb-1">Verra VM0042 Soil Carbon &amp; Agroforestry:</div>
+                  <div className="text-zinc-600">SOC (tCO2e/ha) = BD × d × Δ%C × (1 - CF) × 100 × (44/12)</div>
+                  <div className="text-[10px] text-zinc-400 mt-1">Mandatory 15% Reversal Risk Buffer Pool deduction &amp; smallholder aggregator eligibility</div>
+                </div>
+
+                <div className="bg-white p-2.5 rounded border border-zinc-200">
+                  <div className="font-semibold text-zinc-800 mb-1">India BEE CCTS Intensity Formula:</div>
+                  <div className="text-zinc-600">Actual GEI = (Scope 1 + Scope 2 tCO2e) / Production Output (t)</div>
+                  <div className="text-zinc-600 mt-0.5">CCCs = (Target GEI - Actual GEI) × Output</div>
+                  <div className="text-[10px] text-zinc-400 mt-1">Bureau of Energy Efficiency Carbon Credit Certificates (1 CCC = 1 tCO2e)</div>
                 </div>
               </div>
             </article>

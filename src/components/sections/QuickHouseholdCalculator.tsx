@@ -470,14 +470,15 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
         {/* Step 2: Beneficiary Name & Generate Quote */}
         <div className="bg-zinc-50 rounded-xl p-4 sm:p-5 border border-zinc-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex-1">
-            <label className="text-xs font-bold text-zinc-800 block mb-1">
-              Certificate Beneficiary Name
+            <label htmlFor="recipient-name" className="text-xs font-bold text-zinc-800 block mb-1">
+              Recipient Name for Certificate of Retirement
             </label>
             <input
+              id="recipient-name"
               type="text"
               value={beneficiaryName}
               onChange={(e) => setBeneficiaryName(e.target.value)}
-              placeholder="e.g. Jane Doe or The Sharma Family"
+              placeholder="Enter full name or household name"
               className="w-full sm:max-w-md bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs font-medium text-zinc-900 focus:outline-none focus:ring-1 focus:ring-emerald-700"
             />
             <span className="text-[10px] text-zinc-400 mt-0.5 block">
@@ -493,12 +494,12 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
             {isRetiring ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Generating Quote...</span>
+                <span>Generating Quote &amp; Certificate...</span>
               </>
             ) : (
               <>
                 <ShieldCheck className="w-4 h-4 text-emerald-200" />
-                <span>Retire Credits &amp; Generate Certificate</span>
+                <span>Generate Retirement Quote &amp; Certificate</span>
               </>
             )}
           </button>
@@ -506,60 +507,92 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
 
         {/* Retirement Quote Preview Modal / Drawer */}
         {retirementQuote && (
-          <div className="p-5 sm:p-6 bg-zinc-900 text-white rounded-xl border border-zinc-800 shadow-xl space-y-4 animate-fadeIn">
+          <div className="p-5 sm:p-7 bg-zinc-900 text-white rounded-xl border border-zinc-800 shadow-xl space-y-5 animate-fadeIn">
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                <h4 className="text-sm font-bold text-white">
-                  Official Carbon Retirement Quote Preview
+                <h4 className="text-sm sm:text-base font-bold text-white">
+                  Official Certificate of Carbon Retirement (Preview)
                 </h4>
               </div>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-300">
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-300 font-semibold">
                 {retirementQuote.sandbox_mode ? 'Sandbox Mode' : 'Live Carbonmark Verified'}
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs font-mono">
-              <div className="bg-zinc-800/70 p-3 rounded-lg border border-zinc-700/60">
-                <span className="text-zinc-400 text-[10px] block">Retirement Volume</span>
-                <span className="text-base font-bold text-white">
-                  {retirementQuote.quote.quantity_tco2e} tCO₂e
-                </span>
-                <span className="text-[10px] text-zinc-400 block">
-                  ({retirementQuote.quote.quantity_kg_co2e} kg CO₂e)
-                </span>
+            {/* Certificate Presentation Box */}
+            <div className="border border-emerald-500/30 bg-emerald-950/20 rounded-xl p-4 sm:p-5 relative overflow-hidden">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-emerald-800/40 pb-3 mb-3">
+                <div>
+                  <span className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest font-bold">
+                    Official Certificate of Retirement
+                  </span>
+                  <div className="text-base sm:text-lg font-bold text-white mt-0.5">
+                    Issued to: {retirementQuote.certificate_preview.beneficiary_name}
+                  </div>
+                </div>
+                <div className="text-left sm:text-right font-mono">
+                  <span className="text-[10px] text-zinc-400 block">Certificate Serial Number</span>
+                  <span className="text-xs sm:text-sm font-bold text-emerald-400">
+                    {retirementQuote.certificate_preview.certificate_id}
+                  </span>
+                </div>
               </div>
 
-              <div className="bg-zinc-800/70 p-3 rounded-lg border border-zinc-700/60">
-                <span className="text-zinc-400 text-[10px] block">Unit Price</span>
-                <span className="text-base font-bold text-white">
-                  ${retirementQuote.quote.price_per_tco2e_usd} USD / t
-                </span>
-                <span className="text-[10px] text-zinc-400 block">
-                  Registry Levy: ${retirementQuote.quote.registry_fee_usd}
-                </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
+                <div className="bg-zinc-800/60 p-2.5 rounded border border-zinc-700/50">
+                  <span className="text-zinc-400 text-[10px] block">Volume Retired</span>
+                  <span className="text-sm font-bold text-white">
+                    {retirementQuote.quote.quantity_tco2e} tCO₂e
+                  </span>
+                  <span className="text-[10px] text-zinc-400 block">
+                    ({retirementQuote.quote.quantity_kg_co2e} kg CO₂e)
+                  </span>
+                </div>
+
+                <div className="bg-zinc-800/60 p-2.5 rounded border border-zinc-700/50">
+                  <span className="text-zinc-400 text-[10px] block">Verified Project</span>
+                  <span className="text-xs font-bold text-white truncate block" title={retirementQuote.project.name}>
+                    {retirementQuote.project.name}
+                  </span>
+                  <span className="text-[10px] text-emerald-400 block">
+                    {retirementQuote.project.standard}
+                  </span>
+                </div>
+
+                <div className="bg-zinc-800/60 p-2.5 rounded border border-zinc-700/50">
+                  <span className="text-zinc-400 text-[10px] block">Methodology &amp; Vintage</span>
+                  <span className="text-xs font-bold text-white truncate block">
+                    {retirementQuote.project.methodology}
+                  </span>
+                  <span className="text-[10px] text-zinc-400 block">
+                    Vintage: {retirementQuote.project.vintage}
+                  </span>
+                </div>
+
+                <div className="bg-zinc-800/60 p-2.5 rounded border border-zinc-700/50">
+                  <span className="text-zinc-400 text-[10px] block">Quote Total</span>
+                  <span className="text-sm font-bold text-emerald-400 block">
+                    ${retirementQuote.quote.total_usd} USD
+                  </span>
+                  <span className="text-[10px] text-zinc-400 block">
+                    Unit: ${retirementQuote.quote.price_per_tco2e_usd}/t
+                  </span>
+                </div>
               </div>
 
-              <div className="bg-zinc-800/70 p-3 rounded-lg border border-zinc-700/60">
-                <span className="text-zinc-400 text-[10px] block">Total Settlement</span>
-                <span className="text-lg font-bold text-emerald-400">
-                  ${retirementQuote.quote.total_usd} USD
-                </span>
-                <span className="text-[10px] text-zinc-400 block">Permanent Retirement</span>
-              </div>
-
-              <div className="bg-zinc-800/70 p-3 rounded-lg border border-zinc-700/60">
-                <span className="text-zinc-400 text-[10px] block">Certificate Serial ID</span>
-                <span className="text-xs font-bold text-sky-400 break-all">
-                  {retirementQuote.certificate_preview.certificate_id}
-                </span>
-                <span className="text-[10px] text-zinc-400 block">
-                  Beneficiary: {retirementQuote.certificate_preview.beneficiary_name}
-                </span>
+              <div className="mt-3 pt-3 border-t border-emerald-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-zinc-400">
+                <div className="flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>Status: <strong>{retirementQuote.certificate_preview.legal_status}</strong></span>
+                </div>
+                <div className="font-mono text-[10px] text-zinc-500">
+                  Batch: {retirementQuote.project.serial_number_preview}
+                </div>
               </div>
             </div>
 
-            <div className="pt-3 border-t border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="pt-2 border-t border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
               <span className="text-zinc-400 text-[11px]">
                 Proceed to live credit settlement via institutional marketplaces:
               </span>
