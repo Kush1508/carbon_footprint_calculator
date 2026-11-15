@@ -4,9 +4,10 @@ import React, { useState } from 'react';
 import App from '@/App';
 import { QuickHouseholdCalculator } from '../sections/QuickHouseholdCalculator';
 import { CarbonCreditingSuite } from '../sections/CarbonCreditingSuite';
-import { Zap, ShieldCheck, Scale, ArrowRight, Sparkles } from 'lucide-react';
+import { ConsultantResearchWorkbench } from '../sections/ConsultantResearchWorkbench';
+import { Zap, ShieldCheck, Microscope, Scale, ArrowRight, Sparkles } from 'lucide-react';
 
-export type ExperienceMode = 'quick' | 'audit';
+export type ExperienceMode = 'quick' | 'audit' | 'workbench';
 
 export function CalculatorExperience() {
   const [mode, setMode] = useState<ExperienceMode>('quick');
@@ -36,13 +37,13 @@ export function CalculatorExperience() {
             </div>
           </div>
 
-          {/* Two-Pill Mode Switcher (Grid on mobile, flex on desktop) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-1 bg-zinc-100 rounded-xl border border-zinc-200 shadow-inner w-full md:w-auto">
-            {/* Tab 1: Quick / Exact Household */}
+          {/* Three-Pill Mode Switcher (Grid on mobile/tablet, flex on desktop) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5 p-1 bg-zinc-100 rounded-xl border border-zinc-200 shadow-inner w-full md:w-auto">
+            {/* Tab 1: Personal Lifecycle (KTH Spec) */}
             <button
               type="button"
               onClick={() => setMode('quick')}
-              className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all text-center ${
+              className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all text-center ${
                 mode === 'quick'
                   ? 'bg-white text-emerald-950 shadow-sm border border-zinc-200/90 font-extrabold'
                   : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/50'
@@ -56,7 +57,7 @@ export function CalculatorExperience() {
             <button
               type="button"
               onClick={() => setMode('audit')}
-              className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all text-center ${
+              className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all text-center ${
                 mode === 'audit'
                   ? 'bg-white text-zinc-950 shadow-sm border border-zinc-200/90 font-extrabold'
                   : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/50'
@@ -64,6 +65,20 @@ export function CalculatorExperience() {
             >
               <ShieldCheck className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${mode === 'audit' ? 'text-emerald-700' : 'text-zinc-500'}`} />
               <span>🏛️ Registry Audit &amp; Issuance</span>
+            </button>
+
+            {/* Tab 3: Consultant & Research Workbench */}
+            <button
+              type="button"
+              onClick={() => setMode('workbench')}
+              className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all text-center ${
+                mode === 'workbench'
+                  ? 'bg-white text-purple-950 shadow-sm border border-zinc-200/90 font-extrabold'
+                  : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/50'
+              }`}
+            >
+              <Microscope className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${mode === 'workbench' ? 'text-purple-700' : 'text-zinc-500'}`} />
+              <span>🔬 Consultant &amp; Research Workbench</span>
             </button>
           </div>
         </div>
@@ -73,6 +88,10 @@ export function CalculatorExperience() {
       {mode === 'quick' ? (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           <QuickHouseholdCalculator onSwitchToAudit={() => setMode('audit')} />
+        </div>
+      ) : mode === 'workbench' ? (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+          <ConsultantResearchWorkbench />
         </div>
       ) : (
         <div>
