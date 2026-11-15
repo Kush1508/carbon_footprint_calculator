@@ -1,0 +1,496 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Climate-Ledger Carbon Accounting & Credit Readiness API",
+    "version": "1.0.0",
+    "description": "High-precision, audit-grade carbon accounting API supporting Households, Farmers (IPCC Tier 1), and Corporate Entities (GHG Protocol Scope 1, 2, 3 + GSF SCI). Validated for programmatic AI agent integration, LLM tool-calling, and enterprise ESG reporting.",
+    "contact": {
+      "name": "Climate-Ledger Engineering",
+      "url": "https://carbonfootprintcalculator-two.vercel.app"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://carbonfootprintcalculator-two.vercel.app",
+      "description": "Production Server (Vercel Edge)"
+    },
+    {
+      "url": "http://localhost:3000",
+      "description": "Local Development Server"
+    }
+  ],
+  "paths": {
+    "/api/calculate": {
+      "get": {
+        "summary": "Calculate carbon footprint and credit requirements (GET Query)",
+        "operationId": "calculateCarbonFootprintGet",
+        "description": "Calculates audit-grade carbon emissions (tCO2e and kgCO2e), emission breakdowns by scope, and required carbon offset credits for a specified archetype and parameter set via URL query parameters.",
+        "parameters": [
+          {
+            "name": "role",
+            "in": "query",
+            "description": "Archetype selector",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["individual", "household", "farmer", "agriculture", "company", "corporate"],
+              "default": "individual"
+            }
+          },
+          {
+            "name": "grid",
+            "in": "query",
+            "description": "Regional electricity grid emission factor preset",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["india_cea", "us_egrid", "eu_residual", "uk_desnz"],
+              "default": "india_cea"
+            }
+          },
+          {
+            "name": "kwh",
+            "in": "query",
+            "description": "Monthly electricity consumption in kilowatt-hours (kWh)",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "waterM3",
+            "in": "query",
+            "description": "Monthly domestic water consumption in cubic meters (m³)",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "hasSewage",
+            "in": "query",
+            "description": "Whether domestic water has municipal sewage treatment",
+            "required": false,
+            "schema": { "type": "boolean", "default": true }
+          },
+          {
+            "name": "wasteKg",
+            "in": "query",
+            "description": "Weekly municipal solid waste generation in kilograms (kg)",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "wasteRoute",
+            "in": "query",
+            "description": "Disposal pathway for solid waste",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["landfill", "compost", "recycling"],
+              "default": "landfill"
+            }
+          },
+          {
+            "name": "lpgKg",
+            "in": "query",
+            "description": "Monthly LPG cooking gas consumption in kg",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "petrolLiters",
+            "in": "query",
+            "description": "Monthly motor gasoline / petrol in liters",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "dieselLiters",
+            "in": "query",
+            "description": "Monthly automotive diesel in liters",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "dairyCattle",
+            "in": "query",
+            "description": "Headcount of dairy cattle for enteric fermentation",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "beefCattle",
+            "in": "query",
+            "description": "Headcount of beef / non-dairy cattle",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "buffalo",
+            "in": "query",
+            "description": "Headcount of water buffalo",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "sheepGoats",
+            "in": "query",
+            "description": "Headcount of sheep and goats",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "swine",
+            "in": "query",
+            "description": "Headcount of swine / pigs",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "fertilizerKg",
+            "in": "query",
+            "description": "Annual synthetic fertilizer applied in kilograms",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "fertilizerType",
+            "in": "query",
+            "description": "Chemical formulation of synthetic fertilizer",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["urea", "dap", "ammonium_nitrate", "npk_20_20_20", "pure_n"],
+              "default": "urea"
+            }
+          },
+          {
+            "name": "manureKgN",
+            "in": "query",
+            "description": "Annual organic manure applied in kg of active Nitrogen",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "paddyHectares",
+            "in": "query",
+            "description": "Cultivated rice paddy area in hectares",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "paddyDays",
+            "in": "query",
+            "description": "Flooded cultivation duration in days",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 90 }
+          },
+          {
+            "name": "waterRegime",
+            "in": "query",
+            "description": "Rice water management regime",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["continuously_flooded", "single_aeration", "alternate_wetting_drying"],
+              "default": "continuously_flooded"
+            }
+          },
+          {
+            "name": "machineryDieselLiters",
+            "in": "query",
+            "description": "Annual agricultural machinery and pump diesel in liters",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "naturalGasM3",
+            "in": "query",
+            "description": "Corporate stationary natural gas combustion in cubic meters",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "r410aKg",
+            "in": "query",
+            "description": "HVAC refrigerant fugitive leakage of R410A in kg (GWP 2088)",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "r134aKg",
+            "in": "query",
+            "description": "HVAC refrigerant fugitive leakage of R134a in kg (GWP 1430)",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "r32Kg",
+            "in": "query",
+            "description": "HVAC refrigerant fugitive leakage of R32 in kg (GWP 675)",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "gridElectricityMwh",
+            "in": "query",
+            "description": "Annual corporate grid electricity in Megawatt-hours (MWh)",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "greenPpaMwh",
+            "in": "query",
+            "description": "Bundled renewable energy certificate / PPA in MWh (zero emission factor)",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "freightTkm",
+            "in": "query",
+            "description": "Upstream / downstream logistics in tonne-kilometers (tkm)",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "spendUsd",
+            "in": "query",
+            "description": "Scope 3 procurement spend in USD",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "spendSector",
+            "in": "query",
+            "description": "EEIO procurement category sector",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["it_hardware", "software_cloud", "professional_services", "machinery", "chemicals", "construction"],
+              "default": "software_cloud"
+            }
+          },
+          {
+            "name": "vcpuHours",
+            "in": "query",
+            "description": "Cloud virtual CPU hours for Green Software SCI calculation",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "ramGbHours",
+            "in": "query",
+            "description": "Cloud RAM gigabyte-hours for Green Software SCI calculation",
+            "required": false,
+            "schema": { "type": "number", "minimum": 0, "default": 0 }
+          },
+          {
+            "name": "pue",
+            "in": "query",
+            "description": "Data center Power Usage Effectiveness (1.0 - 3.0)",
+            "required": false,
+            "schema": { "type": "number", "minimum": 1.0, "maximum": 3.0, "default": 1.2 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful calculation output",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CalculationResponse" },
+                "example": {
+                  "success": true,
+                  "role": "individual",
+                  "grid": {
+                    "key": "india_cea",
+                    "country": "India",
+                    "sourceAuthority": "CEA Version 19 (2023-24)",
+                    "emissionFactorKwh": 0.716
+                  },
+                  "total_tco2e": 2.5776,
+                  "total_kg_co2e": 2577.6,
+                  "credits_needed": 3,
+                  "recommended_registry": {
+                    "registry": "BEE ICM (Bureau of Energy Efficiency India Carbon Market)",
+                    "standard": "Carbon Credit Trading Scheme (CCTS) 2023",
+                    "offsetTypes": ["Domestic Solar Rooftop", "Energy Efficiency Perform Achieve Trade"],
+                    "website": "https://beeindia.gov.in"
+                  },
+                  "breakdown": {
+                    "grid_electricity": {
+                      "kg_co2e": 2577.6,
+                      "t_co2e": 2.5776,
+                      "scope": "Scope 2",
+                      "description": "3600 kWh × 0.716 kg CO2e/kWh (India)"
+                    }
+                  },
+                  "methodologies": [
+                    "Electricity: 3600 kWh × 0.716 kg CO2e/kWh [Ref: CEA Version 19 (2023-24)]"
+                  ],
+                  "timestamp": "2026-11-16T00:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameter input",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Calculate carbon footprint and credit requirements (POST JSON Body)",
+        "operationId": "calculateCarbonFootprintPost",
+        "description": "Calculates carbon footprint with JSON request body payload. Ideal for AI agent programmatic calls and bulk enterprise payloads.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CalculationInput" },
+              "example": {
+                "role": "farmer",
+                "grid": "india_cea",
+                "dairyCattle": 35,
+                "beefCattle": 20,
+                "sheepGoats": 45,
+                "fertilizerKg": 2500,
+                "fertilizerType": "urea",
+                "paddyHectares": 12,
+                "paddyDays": 105,
+                "waterRegime": "continuously_flooded",
+                "machineryDieselLiters": 1800
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful calculation output",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CalculationResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON body payload",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CalculationInput": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": ["individual", "household", "farmer", "agriculture", "company", "corporate"],
+            "default": "individual"
+          },
+          "grid": {
+            "type": "string",
+            "enum": ["india_cea", "us_egrid", "eu_residual", "uk_desnz"],
+            "default": "india_cea"
+          },
+          "kwh": { "type": "number", "minimum": 0, "default": 0 },
+          "waterM3": { "type": "number", "minimum": 0, "default": 0 },
+          "hasSewage": { "type": "boolean", "default": true },
+          "wasteKg": { "type": "number", "minimum": 0, "default": 0 },
+          "wasteRoute": { "type": "string", "enum": ["landfill", "compost", "recycling"], "default": "landfill" },
+          "lpgKg": { "type": "number", "minimum": 0, "default": 0 },
+          "petrolLiters": { "type": "number", "minimum": 0, "default": 0 },
+          "dieselLiters": { "type": "number", "minimum": 0, "default": 0 },
+          "dairyCattle": { "type": "number", "minimum": 0, "default": 0 },
+          "beefCattle": { "type": "number", "minimum": 0, "default": 0 },
+          "buffalo": { "type": "number", "minimum": 0, "default": 0 },
+          "sheepGoats": { "type": "number", "minimum": 0, "default": 0 },
+          "swine": { "type": "number", "minimum": 0, "default": 0 },
+          "fertilizerKg": { "type": "number", "minimum": 0, "default": 0 },
+          "fertilizerType": { "type": "string", "enum": ["urea", "dap", "ammonium_nitrate", "npk_20_20_20", "pure_n"], "default": "urea" },
+          "manureKgN": { "type": "number", "minimum": 0, "default": 0 },
+          "paddyHectares": { "type": "number", "minimum": 0, "default": 0 },
+          "paddyDays": { "type": "number", "minimum": 0, "default": 90 },
+          "waterRegime": { "type": "string", "enum": ["continuously_flooded", "single_aeration", "alternate_wetting_drying"], "default": "continuously_flooded" },
+          "machineryDieselLiters": { "type": "number", "minimum": 0, "default": 0 },
+          "naturalGasM3": { "type": "number", "minimum": 0, "default": 0 },
+          "r410aKg": { "type": "number", "minimum": 0, "default": 0 },
+          "r134aKg": { "type": "number", "minimum": 0, "default": 0 },
+          "r32Kg": { "type": "number", "minimum": 0, "default": 0 },
+          "gridElectricityMwh": { "type": "number", "minimum": 0, "default": 0 },
+          "greenPpaMwh": { "type": "number", "minimum": 0, "default": 0 },
+          "freightTkm": { "type": "number", "minimum": 0, "default": 0 },
+          "spendUsd": { "type": "number", "minimum": 0, "default": 0 },
+          "spendSector": { "type": "string", "enum": ["it_hardware", "software_cloud", "professional_services", "machinery", "chemicals", "construction"], "default": "software_cloud" },
+          "vcpuHours": { "type": "number", "minimum": 0, "default": 0 },
+          "ramGbHours": { "type": "number", "minimum": 0, "default": 0 },
+          "pue": { "type": "number", "minimum": 1.0, "maximum": 3.0, "default": 1.2 }
+        }
+      },
+      "CalculationResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "role": { "type": "string" },
+          "grid": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string" },
+              "country": { "type": "string" },
+              "sourceAuthority": { "type": "string" },
+              "emissionFactorKwh": { "type": "number" }
+            }
+          },
+          "total_tco2e": { "type": "number", "description": "Total carbon footprint in metric tonnes of CO2 equivalent" },
+          "total_kg_co2e": { "type": "number", "description": "Total carbon footprint in kilograms of CO2 equivalent" },
+          "credits_needed": { "type": "integer", "description": "Ceiling number of verified 1-tonne carbon offset credits required for net-zero parity" },
+          "recommended_registry": {
+            "type": "object",
+            "properties": {
+              "registry": { "type": "string" },
+              "standard": { "type": "string" },
+              "offsetTypes": { "type": "array", "items": { "type": "string" } },
+              "website": { "type": "string" }
+            }
+          },
+          "breakdown": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "kg_co2e": { "type": "number" },
+                "t_co2e": { "type": "number" },
+                "scope": { "type": "string" },
+                "description": { "type": "string" }
+              }
+            }
+          },
+          "methodologies": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "error": { "type": "string" },
+          "details": { "type": "object" }
+        }
+      }
+    }
+  }
+}
