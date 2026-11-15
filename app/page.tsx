@@ -91,7 +91,7 @@ const faqPageSchema = {
 
 export default function Page() {
   return (
-    <>
+    <main className="w-full max-w-full overflow-x-hidden">
       {/* Schema.org Structured Data */}
       <script
         type="application/ld+json"
@@ -475,6 +475,6 @@ export default function Page() {
           </div>
         </div>
       </section>
-    </>
+    </main>
   );
 }

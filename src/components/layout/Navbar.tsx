@@ -35,8 +35,8 @@ export function Navbar({
   const activeGrid = REGIONAL_GRID_PRESETS[selectedGridKey];
 
   return (
-    <nav className="w-full h-14 border-b border-zinc-200/90 bg-zinc-50/90 backdrop-blur-md transition-all">
-      <div className="max-w-7xl mx-auto h-full px-2.5 sm:px-6 flex items-center justify-between gap-1.5 sm:gap-4">
+    <nav className="w-full min-h-14 h-auto border-b border-zinc-200/90 bg-zinc-50/90 backdrop-blur-md transition-all py-1.5 sm:py-0">
+      <div className="max-w-7xl mx-auto px-2.5 sm:px-6 flex flex-wrap items-center justify-between gap-2">
         {/* Workspace Scope Label */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <div className="flex items-center gap-1.5 sm:gap-2">

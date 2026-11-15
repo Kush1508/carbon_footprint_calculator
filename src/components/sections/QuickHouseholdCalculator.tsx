@@ -347,7 +347,7 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   };
 
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <div className="space-y-8 animate-fadeIn pb-16 md:pb-0">
       {/* Top Banner: Exact Primary Data & KTH Rules */}
       <div className="bg-emerald-950 text-white rounded-2xl p-4 sm:p-6 shadow-xs border border-emerald-800/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -1113,7 +1113,7 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
       {/* ============================================================== */}
       {/* OFFSET RETIREMENT FLOW & CERTIFICATE ACTION CARD */}
       {/* ============================================================== */}
-      <div className="bg-white rounded-2xl border border-zinc-200/90 p-5 sm:p-7 shadow-sm space-y-6">
+      <div id="retire-section" className="bg-white rounded-2xl border border-zinc-200/90 p-5 sm:p-7 shadow-sm space-y-6">
         <div className="border-b border-zinc-100 pb-4">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold uppercase tracking-wider mb-2">
             <HeartHandshake className="w-3.5 h-3.5 text-emerald-700" />
@@ -1359,6 +1359,28 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
             </div>
           </div>
         )}
+      </div>
+
+      {/* Mobile Sticky Bottom Summary Bar */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-zinc-950/95 backdrop-blur-md text-white border-t border-zinc-800 px-4 py-2.5 flex items-center justify-between shadow-2xl">
+        <div>
+          <span className="text-[10px] font-mono text-emerald-400 block uppercase">Personal Footprint</span>
+          <span className="text-base font-bold font-mono text-white">
+            {footprint.totalPersonalTco2e.toFixed(3)} <span className="text-[10px] text-zinc-400">tCO₂e/yr</span>
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="text-right">
+            <span className="text-[10px] font-mono text-zinc-400 block">Neutralize</span>
+            <span className="text-xs font-bold font-mono text-emerald-400">{footprint.creditsNeeded} Credits</span>
+          </div>
+          <a
+            href="#retire-section"
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold transition"
+          >
+            Retire
+          </a>
+        </div>
       </div>
     </div>
   );

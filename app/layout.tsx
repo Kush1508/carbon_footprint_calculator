@@ -70,7 +70,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="h-full bg-[#F9FAFB]">
+    <html lang="en" className="h-full bg-[#F9FAFB] overflow-x-hidden w-full max-w-full">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -79,7 +79,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-full bg-[#F9FAFB] text-zinc-900 antialiased font-sans selection:bg-emerald-100 selection:text-emerald-900">
+      <body className="min-h-full bg-[#F9FAFB] text-zinc-900 antialiased font-sans selection:bg-emerald-100 selection:text-emerald-900 overflow-x-hidden w-full max-w-full">
         {children}
       </body>
     </html>
