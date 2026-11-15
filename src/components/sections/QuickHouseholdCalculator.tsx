@@ -38,6 +38,7 @@ import {
   FileText,
   Sparkles,
   Layers,
+  Sliders,
 } from 'lucide-react';
 import { REGIONAL_GRID_PRESETS } from '../../engine/factors';
 import { RegionalGridKey } from '../../types';
@@ -45,6 +46,8 @@ import { RegionalGridKey } from '../../types';
 interface QuickHouseholdCalculatorProps {
   onSwitchToAudit?: () => void;
 }
+
+export type SystemBoundary = 'operational' | 'lifecycle';
 
 export type CookingFuelType = 'none' | 'lpg' | 'png' | 'biogas' | 'electric_induction';
 
@@ -69,19 +72,63 @@ export interface CommuteLeg {
   efficiency: number; // L/100km or kWh/km
   fuelLitersMonth: number;
   occupancy: number;
+  useCustomEf?: boolean;
+  customEf?: number; // kg CO2e / unit (pkm or L)
 }
 
 export interface ProvenanceItem {
   domain: string;
   activity: string;
   quantity: string;
-  factor: string;
+  baseFactor: string;
+  effectiveFactor: string;
   source: string;
   boundary: string;
+  lifecycleMode: string;
   emissionsTco2e: number;
 }
 
+export const REGIONAL_LIFECYCLE_PROFILES: Record<
+  RegionalGridKey,
+  {
+    nationalAverage: number;
+    benchmarkLabel: string;
+    tdLossPercent: number;
+    tdLossRate: number;
+  }
+> = {
+  india_cea: {
+    nationalAverage: 1.9,
+    benchmarkLabel: 'India CEA / MoEFCC Baseline',
+    tdLossPercent: 17.5,
+    tdLossRate: 0.175,
+  },
+  us_egrid: {
+    nationalAverage: 14.2,
+    benchmarkLabel: 'US EPA / World Bank Baseline',
+    tdLossPercent: 5.1,
+    tdLossRate: 0.051,
+  },
+  eu_residual: {
+    nationalAverage: 6.8,
+    benchmarkLabel: 'EU-27 Eurostat Baseline',
+    tdLossPercent: 6.2,
+    tdLossRate: 0.062,
+  },
+  uk_desnz: {
+    nationalAverage: 5.2,
+    benchmarkLabel: 'UK DESNZ Baseline',
+    tdLossPercent: 7.8,
+    tdLossRate: 0.078,
+  },
+};
+
 export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalculatorProps) {
+  // =========================================================================
+  // SYSTEM BOUNDARY MODE (TTW Operational vs Full Lifecycle WTW + T&D Losses)
+  // =========================================================================
+  const [systemBoundary, setSystemBoundary] = useState<SystemBoundary>('operational');
+
   // =========================================================================
   // 1. SHARED HOUSEHOLD ALLOCATION
   // =========================================================================
@@ -104,6 +151,8 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   const [heatPumpKwhMonth, setHeatPumpKwhMonth] = useState<number>(0);
   const [heatingFuelType, setHeatingFuelType] = useState<'gas' | 'oil' | 'biomass'>('gas');
   const [heatingFuelQtyMonth, setHeatingFuelQtyMonth] = useState<number>(0);
+  const [customHeatingFuelEfEnabled, setCustomHeatingFuelEfEnabled] = useState<boolean>(false);
+  const [customHeatingFuelEf, setCustomHeatingFuelEf] = useState<number>(2.02);
 
   // Cooking (Default: None / 0)
   const [cookingFuel, setCookingFuel] = useState<CookingFuelType>('none');
@@ -112,6 +161,9 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   const [exactLpgKgMonth, setExactLpgKgMonth] = useState<number>(0);
   const [pngM3Month, setPngM3Month] = useState<number>(0);
   const [biogasM3Month, setBiogasM3Month] = useState<number>(0);
+  const [customCookingEfEnabled, setCustomCookingEfEnabled] = useState<boolean>(false);
+  const [customLpgEf, setCustomLpgEf] = useState<number>(2.983);
+  const [customPngEf, setCustomPngEf] = useState<number>(2.02);
 
   // =========================================================================
   // 3. ROAD & PUBLIC TRANSPORT (MULTI-LEG BUILDER)
@@ -126,6 +178,8 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
       efficiency: 0,
       fuelLitersMonth: 0,
       occupancy: 1,
+      useCustomEf: false,
+      customEf: 0.035,
     },
   ]);
 
@@ -148,6 +202,11 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   const [porkPoultryKgMonth, setPorkPoultryKgMonth] = useState<number>(0);
   const [dairyCheeseKgMonth, setDairyCheeseKgMonth] = useState<number>(0);
   const [plantGrainsKgMonth, setPlantGrainsKgMonth] = useState<number>(0);
+  const [customFoodEfEnabled, setCustomFoodEfEnabled] = useState<boolean>(false);
+  const [customBeefEf, setCustomBeefEf] = useState<number>(27.0);
+  const [customPoultryEf, setCustomPoultryEf] = useState<number>(6.9);
+  const [customDairyEf, setCustomDairyEf] = useState<number>(8.5);
+  const [customPlantEf, setCustomPlantEf] = useState<number>(1.5);
 
   // =========================================================================
   // 6. GOODS & SERVICES (LIFECYCLE QUANTITY PREFERRED / SPEND FALLBACK — DEFAULT 0)
@@ -159,10 +218,16 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   const [laptopsQtyYear, setLaptopsQtyYear] = useState<number>(0);
   const [clothingItemsYear, setClothingItemsYear] = useState<number>(0);
   const [footwearPairsYear, setFootwearPairsYear] = useState<number>(0);
+  const [customGoodsEfEnabled, setCustomGoodsEfEnabled] = useState<boolean>(false);
+  const [customPhoneEf, setCustomPhoneEf] = useState<number>(70.0);
+  const [customLaptopEf, setCustomLaptopEf] = useState<number>(250.0);
+  const [customClothingEf, setCustomClothingEf] = useState<number>(15.0);
+  const [customFootwearEf, setCustomFootwearEf] = useState<number>(18.0);
   // Spend Fallback inputs
   const [spendAmount, setSpendAmount] = useState<number>(0);
   const [spendCurrency, setSpendCurrency] = useState<'INR' | 'USD' | 'EUR' | 'GBP'>('INR');
   const [spendSector, setSpendSector] = useState<'electronics' | 'clothing' | 'services' | 'appliances'>('electronics');
+  const [customSpendEf, setCustomSpendEf] = useState<number>(0.32);
 
   // =========================================================================
   // 7. WATER & MUNICIPAL WASTE (OPT-IN, DEFAULT 0)
@@ -170,6 +235,9 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   const [includeWaterWaste, setIncludeWaterWaste] = useState<boolean>(false);
   const [waterM3Month, setWaterM3Month] = useState<number>(0);
   const [wasteKgWeek, setWasteKgWeek] = useState<number>(0);
+  const [customWaterWasteEfEnabled, setCustomWaterWasteEfEnabled] = useState<boolean>(false);
+  const [customWaterEf, setCustomWaterEf] = useState<number>(1.052);
+  const [customWasteEf, setCustomWasteEf] = useState<number>(0.586);
 
   // =========================================================================
   // UI TOGGLE: AUDIT PROVENANCE LEDGER
@@ -184,9 +252,16 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   const [isRetiring, setIsRetiring] = useState<boolean>(false);
   const [retirementQuote, setRetirementQuote] = useState<any | null>(null);
 
-  // Active grid factor (Preset or custom override)
+  // Active grid factor & Regional Profile
   const gridPreset = REGIONAL_GRID_PRESETS[gridKey] || REGIONAL_GRID_PRESETS.india_cea;
+  const regionalProfile = REGIONAL_LIFECYCLE_PROFILES[gridKey] || REGIONAL_LIFECYCLE_PROFILES.india_cea;
   const activeGridEf = useCustomGridFactor && customGridFactor > 0 ? customGridFactor : gridPreset.emissionFactorKwh;
+
+  // Dynamic Electric Rail Factors (coupled to activeGridEf):
+  // Metro / Urban Rail: ~0.049 kWh/pkm × EF_grid
+  // Commuter Rail / Intercity: ~0.057 kWh/pkm × EF_grid
+  const dynamicMetroEf = 0.049 * activeGridEf;
+  const dynamicCommuterTrainEf = 0.057 * activeGridEf;
 
   // Commute Leg Handlers
   const addCommuteLeg = () => {
@@ -199,6 +274,8 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
       efficiency: 0,
       fuelLitersMonth: 0,
       occupancy: 1,
+      useCustomEf: false,
+      customEf: 0.089,
     };
     setCommuteLegs([...commuteLegs, newLeg]);
   };
@@ -207,7 +284,6 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
     if (commuteLegs.length > 1) {
       setCommuteLegs(commuteLegs.filter((leg) => leg.id !== id));
     } else {
-      // Reset the single leg to 0
       setCommuteLegs([
         {
           id: 'leg-1',
@@ -218,6 +294,8 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
           efficiency: 0,
           fuelLitersMonth: 0,
           occupancy: 1,
+          useCustomEf: false,
+          customEf: 0,
         },
       ]);
     }
@@ -356,23 +434,33 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   const calculation = useMemo(() => {
     const validResidents = Math.max(1, Number(residents) || 1);
     const allocationShare = 1 / validResidents;
+    const isLifecycle = systemBoundary === 'lifecycle';
     const provenanceList: ProvenanceItem[] = [];
+
+    // Upstream multipliers
+    const gridMultiplier = isLifecycle ? 1 + regionalProfile.tdLossRate : 1.0;
+    const fuelWttMultiplier = isLifecycle ? 1.18 : 1.0; // +18% WTT upstream extraction/refining
 
     // -----------------------------------------------------------------------
     // 1. Grid Electricity (Shared)
     // -----------------------------------------------------------------------
     const annualElecKwh = Math.max(0, Number(electricityKwh)) * 12;
-    const householdElecKg = annualElecKwh * activeGridEf;
+    const baseGridEf = activeGridEf;
+    const effectiveGridEf = baseGridEf * gridMultiplier;
+    const householdElecKg = annualElecKwh * effectiveGridEf;
     const personalElecTco2e = (householdElecKg * allocationShare) / 1000;
+    const operationalPersonalElecTco2e = ((annualElecKwh * baseGridEf) * allocationShare) / 1000;
 
     if (annualElecKwh > 0) {
       provenanceList.push({
         domain: 'Home Energy',
         activity: 'Grid Electricity Consumption',
         quantity: `${annualElecKwh.toLocaleString()} kWh/yr`,
-        factor: `${activeGridEf.toFixed(3)} kg CO₂e/kWh`,
+        baseFactor: `${baseGridEf.toFixed(3)} kg CO₂e/kWh`,
+        effectiveFactor: `${effectiveGridEf.toFixed(3)} kg CO₂e/kWh ${isLifecycle ? `(+${regionalProfile.tdLossPercent}% T&D)` : ''}`,
         source: useCustomGridFactor ? 'Custom Utility Supplier Tariff' : gridPreset.sourceAuthority,
         boundary: `Shared ÷ ${validResidents} residents (${(allocationShare * 100).toFixed(1)}%)`,
+        lifecycleMode: isLifecycle ? `WTW (Includes +${regionalProfile.tdLossPercent}% T&D loss)` : 'TTW Generation Only',
         emissionsTco2e: personalElecTco2e,
       });
     }
@@ -381,108 +469,139 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
     // 2. Home Heating (Shared)
     // -----------------------------------------------------------------------
     let householdHeatingKg = 0;
+    let operationalHouseholdHeatingKg = 0;
     if (includeHeating) {
       if (heatingType === 'district_heat') {
         const annualHeatKwh = Math.max(0, Number(districtHeatKwhMonth)) * 12;
-        householdHeatingKg = annualHeatKwh * Math.max(0, Number(districtHeatEf));
+        const baseHeatEf = Math.max(0, Number(districtHeatEf));
+        const effectiveHeatEf = baseHeatEf * (isLifecycle ? 1.08 : 1.0);
+        householdHeatingKg = annualHeatKwh * effectiveHeatEf;
+        operationalHouseholdHeatingKg = annualHeatKwh * baseHeatEf;
         if (annualHeatKwh > 0) {
           provenanceList.push({
             domain: 'Home Energy',
             activity: 'District Heating Network',
             quantity: `${annualHeatKwh.toLocaleString()} kWh/yr`,
-            factor: `${districtHeatEf.toFixed(3)} kg CO₂e/kWh`,
+            baseFactor: `${baseHeatEf.toFixed(3)} kg CO₂e/kWh`,
+            effectiveFactor: `${effectiveHeatEf.toFixed(3)} kg CO₂e/kWh`,
             source: 'Nordic / EU District Heat Benchmark (ISO 14064)',
             boundary: `Shared ÷ ${validResidents} residents`,
+            lifecycleMode: isLifecycle ? 'WTW Network Losses' : 'TTW Heat Output',
             emissionsTco2e: (householdHeatingKg * allocationShare) / 1000,
           });
         }
       } else if (heatingType === 'heat_pump') {
         const annualCompressorKwh = Math.max(0, Number(heatPumpKwhMonth)) * 12;
-        householdHeatingKg = annualCompressorKwh * activeGridEf;
+        householdHeatingKg = annualCompressorKwh * effectiveGridEf;
+        operationalHouseholdHeatingKg = annualCompressorKwh * baseGridEf;
         if (annualCompressorKwh > 0) {
           provenanceList.push({
             domain: 'Home Energy',
             activity: 'Heat Pump (Compressor Electricity)',
             quantity: `${annualCompressorKwh.toLocaleString()} kWh/yr`,
-            factor: `${activeGridEf.toFixed(3)} kg CO₂e/kWh`,
+            baseFactor: `${baseGridEf.toFixed(3)} kg CO₂e/kWh`,
+            effectiveFactor: `${effectiveGridEf.toFixed(3)} kg CO₂e/kWh`,
             source: 'Grid Emission Factor (Electricity Input Only)',
             boundary: `Shared ÷ ${validResidents} residents`,
+            lifecycleMode: isLifecycle ? `WTW (+${regionalProfile.tdLossPercent}% T&D)` : 'TTW Generation Only',
             emissionsTco2e: (householdHeatingKg * allocationShare) / 1000,
           });
         }
       } else if (heatingType === 'fuel') {
         const annualFuelQty = Math.max(0, Number(heatingFuelQtyMonth)) * 12;
-        const fuelEf =
+        const defaultFuelEf =
           heatingFuelType === 'gas' ? 2.02 : heatingFuelType === 'oil' ? 2.54 : 0.039;
+        const baseFuelEf = customHeatingFuelEfEnabled && customHeatingFuelEf > 0 ? customHeatingFuelEf : defaultFuelEf;
+        const effectiveFuelEf = baseFuelEf * (heatingFuelType === 'biomass' ? 1.0 : fuelWttMultiplier);
         const fuelUnit = heatingFuelType === 'gas' ? 'm³' : heatingFuelType === 'oil' ? 'L' : 'kg';
-        householdHeatingKg = annualFuelQty * fuelEf;
+        householdHeatingKg = annualFuelQty * effectiveFuelEf;
+        operationalHouseholdHeatingKg = annualFuelQty * baseFuelEf;
         if (annualFuelQty > 0) {
           provenanceList.push({
             domain: 'Home Energy',
             activity: `Heating Fuel (${heatingFuelType.toUpperCase()})`,
             quantity: `${annualFuelQty.toLocaleString()} ${fuelUnit}/yr`,
-            factor: `${fuelEf.toFixed(3)} kg CO₂e/${fuelUnit}`,
-            source: 'IPCC Guidelines for National GHG Inventories Vol 2',
+            baseFactor: `${baseFuelEf.toFixed(3)} kg CO₂e/${fuelUnit}`,
+            effectiveFactor: `${effectiveFuelEf.toFixed(3)} kg CO₂e/${fuelUnit} ${isLifecycle && heatingFuelType !== 'biomass' ? '(+18% WTT)' : ''}`,
+            source: customHeatingFuelEfEnabled ? 'Custom Fuel Specification' : 'IPCC Guidelines National GHG Inventories Vol 2',
             boundary: `Shared ÷ ${validResidents} residents`,
+            lifecycleMode: isLifecycle ? 'WTW Upstream Extraction + Combustion' : 'TTW Direct Combustion',
             emissionsTco2e: (householdHeatingKg * allocationShare) / 1000,
           });
         }
       }
     }
     const personalHeatingTco2e = (householdHeatingKg * allocationShare) / 1000;
+    const operationalPersonalHeatingTco2e = (operationalHouseholdHeatingKg * allocationShare) / 1000;
 
     // -----------------------------------------------------------------------
     // 3. Cooking Energy (Shared)
     // -----------------------------------------------------------------------
     let householdCookingKg = 0;
+    let operationalHouseholdCookingKg = 0;
     if (cookingFuel === 'lpg') {
       const monthlyLpgKg = useExactLpgKg
         ? Math.max(0, Number(exactLpgKgMonth))
         : Math.max(0, Number(lpgCylindersMonth)) * 14.2;
       const annualLpgKg = monthlyLpgKg * 12;
-      householdCookingKg = annualLpgKg * 2.983; // 2.983 kg CO2e / kg LPG
+      const baseLpgEf = customCookingEfEnabled && customLpgEf > 0 ? customLpgEf : 2.983;
+      const effectiveLpgEf = baseLpgEf * fuelWttMultiplier;
+      householdCookingKg = annualLpgKg * effectiveLpgEf;
+      operationalHouseholdCookingKg = annualLpgKg * baseLpgEf;
       if (annualLpgKg > 0) {
         provenanceList.push({
           domain: 'Home Energy',
           activity: 'LPG Cooking Cylinders',
           quantity: `${annualLpgKg.toFixed(1)} kg/yr`,
-          factor: '2.983 kg CO₂e/kg',
-          source: 'IPCC AR6 Working Group III / MoPNG',
+          baseFactor: `${baseLpgEf.toFixed(3)} kg CO₂e/kg`,
+          effectiveFactor: `${effectiveLpgEf.toFixed(3)} kg CO₂e/kg ${isLifecycle ? '(+18% WTT)' : ''}`,
+          source: customCookingEfEnabled ? 'Custom LPG Specification' : 'IPCC AR6 WG III / MoPNG',
           boundary: `Shared ÷ ${validResidents} residents`,
+          lifecycleMode: isLifecycle ? 'WTW Refining + Direct Combustion' : 'TTW Combustion Only',
           emissionsTco2e: (householdCookingKg * allocationShare) / 1000,
         });
       }
     } else if (cookingFuel === 'png') {
       const annualPngM3 = Math.max(0, Number(pngM3Month)) * 12;
-      householdCookingKg = annualPngM3 * 2.02; // 2.020 kg CO2e / m3 PNG
+      const basePngEf = customCookingEfEnabled && customPngEf > 0 ? customPngEf : 2.02;
+      const effectivePngEf = basePngEf * fuelWttMultiplier;
+      householdCookingKg = annualPngM3 * effectivePngEf;
+      operationalHouseholdCookingKg = annualPngM3 * basePngEf;
       if (annualPngM3 > 0) {
         provenanceList.push({
           domain: 'Home Energy',
           activity: 'Piped Natural Gas (PNG) Cooking',
           quantity: `${annualPngM3.toLocaleString()} m³/yr`,
-          factor: '2.020 kg CO₂e/m³',
-          source: 'DEFRA / UK DESNZ 2023 & IPCC Vol 2',
+          baseFactor: `${basePngEf.toFixed(3)} kg CO₂e/m³`,
+          effectiveFactor: `${effectivePngEf.toFixed(3)} kg CO₂e/m³ ${isLifecycle ? '(+18% WTT)' : ''}`,
+          source: customCookingEfEnabled ? 'Custom PNG Specification' : 'DEFRA / UK DESNZ 2023 & IPCC Vol 2',
           boundary: `Shared ÷ ${validResidents} residents`,
+          lifecycleMode: isLifecycle ? 'WTW Wellhead + Pipeline + Burn' : 'TTW Direct Combustion',
           emissionsTco2e: (householdCookingKg * allocationShare) / 1000,
         });
       }
     } else if (cookingFuel === 'biogas') {
-      householdCookingKg = 0; // Biogenic neutral per IPCC
+      householdCookingKg = 0;
+      operationalHouseholdCookingKg = 0;
       if (Number(biogasM3Month) > 0) {
         provenanceList.push({
           domain: 'Home Energy',
           activity: 'Biogas (Anaerobic Digester)',
           quantity: `${(Number(biogasM3Month) * 12).toLocaleString()} m³/yr`,
-          factor: '0.000 kg CO₂e/m³ (Biogenic Neutral)',
-          source: 'IPCC AR6 Chapter 5 (Biogenic Carbon Cycle)',
+          baseFactor: '0.000 kg CO₂e/m³',
+          effectiveFactor: '0.000 kg CO₂e/m³',
+          source: 'IPCC AR6 Chapter 5 (Biogenic Carbon Neutral)',
           boundary: `Shared ÷ ${validResidents} residents`,
+          lifecycleMode: 'Closed-Loop Biogenic Neutral',
           emissionsTco2e: 0,
         });
       }
     } else if (cookingFuel === 'electric_induction') {
-      householdCookingKg = 0; // Captured in electricity
+      householdCookingKg = 0;
+      operationalHouseholdCookingKg = 0;
     }
     const personalCookingTco2e = (householdCookingKg * allocationShare) / 1000;
+    const operationalPersonalCookingTco2e = (operationalHouseholdCookingKg * allocationShare) / 1000;
 
     // -----------------------------------------------------------------------
     // 4. Opt-In Domestic Water & Municipal Solid Waste (Shared)
@@ -490,21 +609,30 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
     let householdWaterKg = 0;
     let householdWasteKg = 0;
     let personalWaterWasteTco2e = 0;
+    let operationalPersonalWaterWasteTco2e = 0;
     if (includeWaterWaste) {
       const annualWaterM3 = Math.max(0, Number(waterM3Month)) * 12;
-      householdWaterKg = annualWaterM3 * (0.344 + 0.708); // Supply + Aerobic wastewater treatment = 1.052
+      const baseWaterEf = customWaterWasteEfEnabled && customWaterEf > 0 ? customWaterEf : (0.344 + 0.708);
+      const effectiveWaterEf = baseWaterEf * (isLifecycle ? 1.05 : 1.0);
+      householdWaterKg = annualWaterM3 * effectiveWaterEf;
+
       const annualWasteKg = Math.max(0, Number(wasteKgWeek)) * 52;
-      householdWasteKg = annualWasteKg * 0.586; // Landfill methane per IPCC AR6
+      const baseWasteEf = customWaterWasteEfEnabled && customWasteEf > 0 ? customWasteEf : 0.586;
+      householdWasteKg = annualWasteKg * baseWasteEf;
+
       personalWaterWasteTco2e = ((householdWaterKg + householdWasteKg) * allocationShare) / 1000;
+      operationalPersonalWaterWasteTco2e = (((annualWaterM3 * baseWaterEf) + (annualWasteKg * baseWasteEf)) * allocationShare) / 1000;
 
       if (annualWaterM3 > 0) {
         provenanceList.push({
           domain: 'Municipal Utilities',
           activity: 'Tap Water Supply & Sewage Treatment',
           quantity: `${annualWaterM3.toLocaleString()} m³/yr`,
-          factor: '1.052 kg CO₂e/m³ (0.344 supply + 0.708 wastewater)',
-          source: 'UK DESNZ 2023 Water Infrastructure Assessment',
+          baseFactor: `${baseWaterEf.toFixed(3)} kg CO₂e/m³`,
+          effectiveFactor: `${effectiveWaterEf.toFixed(3)} kg CO₂e/m³`,
+          source: customWaterWasteEfEnabled ? 'Custom Municipal Water Audit' : 'UK DESNZ 2023 Water Infrastructure',
           boundary: `Shared ÷ ${validResidents} residents`,
+          lifecycleMode: isLifecycle ? 'WTW Embodied Treatment Pumping' : 'Direct Utility Operations',
           emissionsTco2e: (householdWaterKg * allocationShare) / 1000,
         });
       }
@@ -513,9 +641,11 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
           domain: 'Municipal Utilities',
           activity: 'Municipal Solid Waste (Landfill Methane)',
           quantity: `${annualWasteKg.toLocaleString()} kg/yr`,
-          factor: '0.586 kg CO₂e/kg waste',
-          source: 'IPCC Waste Model AR6 GWP100',
+          baseFactor: `${baseWasteEf.toFixed(3)} kg CO₂e/kg`,
+          effectiveFactor: `${baseWasteEf.toFixed(3)} kg CO₂e/kg`,
+          source: customWaterWasteEfEnabled ? 'Custom Waste Stream Assay' : 'IPCC Waste Model AR6 GWP100',
           boundary: `Shared ÷ ${validResidents} residents`,
+          lifecycleMode: '20-Year Fugitive Landfill Methane',
           emissionsTco2e: (householdWasteKg * allocationShare) / 1000,
         });
       }
@@ -525,6 +655,8 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
     // 5. Road & Public Transport (100% Personal)
     // -----------------------------------------------------------------------
     let totalTransportKg = 0;
+    let operationalTransportKg = 0;
+
     commuteLegs.forEach((leg) => {
       const annualKm = Math.max(0, Number(leg.weeklyKm)) * 52;
       const occupancyDivider = Math.max(1, Number(leg.occupancy) || 1);
@@ -532,115 +664,150 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
       if (leg.mode === 'bicycle_walk') {
         // Zero
       } else if (leg.mode === 'metro_rail') {
-        const legKg = annualKm * 0.035;
+        // Dynamically coupled to activeGridEf (0.049 kWh/pkm × EF_grid)
+        const baseMetroEf = leg.useCustomEf && leg.customEf && leg.customEf > 0 ? leg.customEf : dynamicMetroEf;
+        const effectiveMetroEf = baseMetroEf * gridMultiplier;
+        const legKg = annualKm * effectiveMetroEf;
         totalTransportKg += legKg;
+        operationalTransportKg += annualKm * baseMetroEf;
         if (annualKm > 0) {
           provenanceList.push({
             domain: 'Transport',
             activity: `Public Metro / Urban Rail (${leg.name})`,
             quantity: `${annualKm.toLocaleString()} pkm/yr`,
-            factor: '0.035 kg CO₂e/pkm',
-            source: 'KTH Transport Model & UK DESNZ 2023',
+            baseFactor: `${baseMetroEf.toFixed(4)} kg CO₂e/pkm (0.049 kWh/pkm × ${activeGridEf.toFixed(3)})`,
+            effectiveFactor: `${effectiveMetroEf.toFixed(4)} kg CO₂e/pkm ${isLifecycle ? `(+${regionalProfile.tdLossPercent}% T&D)` : ''}`,
+            source: leg.useCustomEf ? 'Custom Transit Authority Factor' : 'Dynamic Regional Rail Coupling (KTH Model)',
             boundary: '100% Personal',
+            lifecycleMode: isLifecycle ? `WTW Grid Losses (+${regionalProfile.tdLossPercent}%)` : 'TTW Traction Power',
             emissionsTco2e: legKg / 1000,
           });
         }
       } else if (leg.mode === 'commuter_train') {
-        const legKg = annualKm * 0.041;
+        // Dynamically coupled to activeGridEf (0.057 kWh/pkm × EF_grid)
+        const baseTrainEf = leg.useCustomEf && leg.customEf && leg.customEf > 0 ? leg.customEf : dynamicCommuterTrainEf;
+        const effectiveTrainEf = baseTrainEf * gridMultiplier;
+        const legKg = annualKm * effectiveTrainEf;
         totalTransportKg += legKg;
+        operationalTransportKg += annualKm * baseTrainEf;
         if (annualKm > 0) {
           provenanceList.push({
             domain: 'Transport',
-            activity: `Commuter / Intercity Train (${leg.name})`,
+            activity: `Commuter Train / Intercity Rail (${leg.name})`,
             quantity: `${annualKm.toLocaleString()} pkm/yr`,
-            factor: '0.041 kg CO₂e/pkm',
-            source: 'UIC / UK DESNZ Rail Transport 2023',
+            baseFactor: `${baseTrainEf.toFixed(4)} kg CO₂e/pkm (0.057 kWh/pkm × ${activeGridEf.toFixed(3)})`,
+            effectiveFactor: `${effectiveTrainEf.toFixed(4)} kg CO₂e/pkm ${isLifecycle ? `(+${regionalProfile.tdLossPercent}% T&D)` : ''}`,
+            source: leg.useCustomEf ? 'Custom Rail Agency Factor' : 'Dynamic Regional Rail Coupling (UIC / KTH)',
             boundary: '100% Personal',
+            lifecycleMode: isLifecycle ? `WTW Rail Grid Losses (+${regionalProfile.tdLossPercent}%)` : 'TTW Traction Power',
             emissionsTco2e: legKg / 1000,
           });
         }
       } else if (leg.mode === 'public_bus') {
-        const legKg = annualKm * 0.089;
+        const baseBusEf = leg.useCustomEf && leg.customEf && leg.customEf > 0 ? leg.customEf : 0.089;
+        const effectiveBusEf = baseBusEf * fuelWttMultiplier;
+        const legKg = annualKm * effectiveBusEf;
         totalTransportKg += legKg;
+        operationalTransportKg += annualKm * baseBusEf;
         if (annualKm > 0) {
           provenanceList.push({
             domain: 'Transport',
             activity: `Public Transit Bus (${leg.name})`,
             quantity: `${annualKm.toLocaleString()} pkm/yr`,
-            factor: '0.089 kg CO₂e/pkm',
-            source: 'ARPAN / UK DESNZ Local Bus 2023',
+            baseFactor: `${baseBusEf.toFixed(3)} kg CO₂e/pkm`,
+            effectiveFactor: `${effectiveBusEf.toFixed(3)} kg CO₂e/pkm ${isLifecycle ? '(+18% WTT)' : ''}`,
+            source: leg.useCustomEf ? 'Custom Municipal Fleet Factor' : 'UK DESNZ 2023 Local Bus',
             boundary: '100% Personal',
+            lifecycleMode: isLifecycle ? 'WTW Upstream Fuel + Exhaust' : 'TTW Fleet Exhaust',
             emissionsTco2e: legKg / 1000,
           });
         }
       } else if (leg.mode === 'ev') {
         const legKwh = annualKm * Math.max(0, Number(leg.efficiency));
-        const legKg = legKwh * activeGridEf;
+        const legKg = legKwh * effectiveGridEf;
         totalTransportKg += legKg;
+        operationalTransportKg += legKwh * baseGridEf;
         if (annualKm > 0) {
           provenanceList.push({
             domain: 'Transport',
             activity: `Electric Vehicle (${leg.name})`,
             quantity: `${annualKm.toLocaleString()} km/yr (${legKwh.toFixed(1)} kWh charging)`,
-            factor: `${activeGridEf.toFixed(3)} kg CO₂e/kWh @ ${leg.efficiency} kWh/km`,
+            baseFactor: `${baseGridEf.toFixed(3)} kg CO₂e/kWh @ ${leg.efficiency} kWh/km`,
+            effectiveFactor: `${effectiveGridEf.toFixed(3)} kg CO₂e/kWh ${isLifecycle ? `(+${regionalProfile.tdLossPercent}% T&D)` : ''}`,
             source: 'Grid Emission Factor × Battery Powertrain Draw',
             boundary: '100% Personal',
+            lifecycleMode: isLifecycle ? `WTW Grid (+${regionalProfile.tdLossPercent}% T&D)` : 'TTW Generation Only',
             emissionsTco2e: legKg / 1000,
           });
         }
       } else if (leg.mode === 'two_wheeler' || leg.mode === 'petrol_car') {
-        const fuelEf = 2.315; // kg CO2e / L Petrol
+        const baseFuelEf = leg.useCustomEf && leg.customEf && leg.customEf > 0 ? leg.customEf : 2.315;
+        const effectiveFuelEf = baseFuelEf * fuelWttMultiplier;
         let legKg = 0;
+        let opLegKg = 0;
         let qtyLabel = '';
         if (leg.method === 'fuel_receipt') {
           const annualLiters = Math.max(0, Number(leg.fuelLitersMonth)) * 12;
-          legKg = (annualLiters * fuelEf) / occupancyDivider;
+          legKg = (annualLiters * effectiveFuelEf) / occupancyDivider;
+          opLegKg = (annualLiters * baseFuelEf) / occupancyDivider;
           qtyLabel = `${annualLiters.toLocaleString()} L petrol/yr`;
         } else {
           const litersUsed = annualKm * (Math.max(0, Number(leg.efficiency)) / 100);
-          legKg = (litersUsed * fuelEf) / occupancyDivider;
+          legKg = (litersUsed * effectiveFuelEf) / occupancyDivider;
+          opLegKg = (litersUsed * baseFuelEf) / occupancyDivider;
           qtyLabel = `${annualKm.toLocaleString()} km/yr (${litersUsed.toFixed(1)} L @ ${leg.efficiency} L/100km)`;
         }
         totalTransportKg += legKg;
+        operationalTransportKg += opLegKg;
         if (legKg > 0) {
           provenanceList.push({
             domain: 'Transport',
             activity: `${leg.mode === 'two_wheeler' ? 'Motorcycle/Scooter' : 'Petrol Automobile'} (${leg.method === 'fuel_receipt' ? 'Fuel Receipts' : 'Distance'})`,
             quantity: qtyLabel,
-            factor: '2.315 kg CO₂e/L',
-            source: 'IPCC AR6 Chapter 10 Transport / EPA AP-42',
+            baseFactor: `${baseFuelEf.toFixed(3)} kg CO₂e/L`,
+            effectiveFactor: `${effectiveFuelEf.toFixed(3)} kg CO₂e/L ${isLifecycle ? '(+18% WTT)' : ''}`,
+            source: leg.useCustomEf ? 'Custom Fuel Specification' : 'IPCC AR6 Chapter 10 Transport / EPA AP-42',
             boundary: occupancyDivider > 1 ? `Personal (Carpooled ÷ ${occupancyDivider})` : '100% Personal',
+            lifecycleMode: isLifecycle ? 'WTW Well-to-Wheel (Extraction + Tailpipe)' : 'TTW Tank-to-Wheel Tailpipe Only',
             emissionsTco2e: legKg / 1000,
           });
         }
       } else if (leg.mode === 'diesel_car') {
-        const fuelEf = 2.687; // kg CO2e / L Diesel
+        const baseFuelEf = leg.useCustomEf && leg.customEf && leg.customEf > 0 ? leg.customEf : 2.687;
+        const effectiveFuelEf = baseFuelEf * fuelWttMultiplier;
         let legKg = 0;
+        let opLegKg = 0;
         let qtyLabel = '';
         if (leg.method === 'fuel_receipt') {
           const annualLiters = Math.max(0, Number(leg.fuelLitersMonth)) * 12;
-          legKg = (annualLiters * fuelEf) / occupancyDivider;
+          legKg = (annualLiters * effectiveFuelEf) / occupancyDivider;
+          opLegKg = (annualLiters * baseFuelEf) / occupancyDivider;
           qtyLabel = `${annualLiters.toLocaleString()} L diesel/yr`;
         } else {
           const litersUsed = annualKm * (Math.max(0, Number(leg.efficiency)) / 100);
-          legKg = (litersUsed * fuelEf) / occupancyDivider;
+          legKg = (litersUsed * effectiveFuelEf) / occupancyDivider;
+          opLegKg = (litersUsed * baseFuelEf) / occupancyDivider;
           qtyLabel = `${annualKm.toLocaleString()} km/yr (${litersUsed.toFixed(1)} L @ ${leg.efficiency} L/100km)`;
         }
         totalTransportKg += legKg;
+        operationalTransportKg += opLegKg;
         if (legKg > 0) {
           provenanceList.push({
             domain: 'Transport',
             activity: `Diesel Automobile (${leg.method === 'fuel_receipt' ? 'Fuel Receipts' : 'Distance'})`,
             quantity: qtyLabel,
-            factor: '2.687 kg CO₂e/L',
-            source: 'IPCC AR6 Chapter 10 Transport',
+            baseFactor: `${baseFuelEf.toFixed(3)} kg CO₂e/L`,
+            effectiveFactor: `${effectiveFuelEf.toFixed(3)} kg CO₂e/L ${isLifecycle ? '(+18% WTT)' : ''}`,
+            source: leg.useCustomEf ? 'Custom Fuel Specification' : 'IPCC AR6 Chapter 10 Transport',
             boundary: occupancyDivider > 1 ? `Personal (Carpooled ÷ ${occupancyDivider})` : '100% Personal',
+            lifecycleMode: isLifecycle ? 'WTW Well-to-Wheel (Refinery + Combustion)' : 'TTW Tailpipe Only',
             emissionsTco2e: legKg / 1000,
           });
         }
       }
     });
     const personalTransportTco2e = totalTransportKg / 1000;
+    const operationalPersonalTransportTco2e = operationalTransportKg / 1000;
 
     // -----------------------------------------------------------------------
     // 6. Aviation (100% Personal)
@@ -662,19 +829,23 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
         ? 0.295
         : Math.max(0, Number(customAviationEf));
 
-    const baseDirectFlightKg = flightKmTotal * routeClassEf;
+    const effectiveAviationEf = routeClassEf * (isLifecycle ? 1.09 : 1.0); // +9% WTT Jet A-1 fuel
+    const baseDirectFlightKg = flightKmTotal * effectiveAviationEf;
     const directFlightTco2e = baseDirectFlightKg / 1000;
     const radiativeMultiplier = includeRadiativeForcing ? 1.9 : 1.0;
     const personalAviationTco2e = (baseDirectFlightKg * radiativeMultiplier) / 1000;
+    const operationalPersonalAviationTco2e = ((flightKmTotal * routeClassEf) * radiativeMultiplier) / 1000;
 
     if (flightKmTotal > 0) {
       provenanceList.push({
         domain: 'Aviation',
         activity: `Commercial Passenger Aviation (${flightRouteClass.replace('_', ' ').toUpperCase()})`,
         quantity: `${flightKmTotal.toLocaleString()} pkm/yr`,
-        factor: `${routeClassEf.toFixed(3)} kg CO₂e/pkm ${includeRadiativeForcing ? '× 1.90 RF factor' : ''}`,
-        source: 'ICAO Carbon Emissions Calculator & UK DESNZ 2023',
+        baseFactor: `${routeClassEf.toFixed(3)} kg CO₂e/pkm`,
+        effectiveFactor: `${effectiveAviationEf.toFixed(3)} kg CO₂e/pkm ${includeRadiativeForcing ? '× 1.90 RF factor' : ''} ${isLifecycle ? '(+9% Jet WTT)' : ''}`,
+        source: 'ICAO Carbon Calculator & UK DESNZ Aviation Factors',
         boundary: '100% Personal (Direct + Optional Cirrus Forcing)',
+        lifecycleMode: isLifecycle ? 'WTW Jet Fuel Refining + High-Altitude Burn' : 'Direct In-Flight Fuel Burn',
         emissionsTco2e: personalAviationTco2e,
       });
     }
@@ -689,10 +860,15 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
       const annualDairyKg = Math.max(0, Number(dairyCheeseKgMonth)) * 12;
       const annualPlantKg = Math.max(0, Number(plantGrainsKgMonth)) * 12;
 
-      const beefKgCo2e = annualBeefKg * 27.0; // Poore & Nemecek 2018 / IPCC AR6
-      const porkKgCo2e = annualPorkKg * 6.9;
-      const dairyKgCo2e = annualDairyKg * 8.5;
-      const plantKgCo2e = annualPlantKg * 1.5;
+      const beefEf = customFoodEfEnabled && customBeefEf > 0 ? customBeefEf : 27.0;
+      const poultryEf = customFoodEfEnabled && customPoultryEf > 0 ? customPoultryEf : 6.9;
+      const dairyEf = customFoodEfEnabled && customDairyEf > 0 ? customDairyEf : 8.5;
+      const plantEf = customFoodEfEnabled && customPlantEf > 0 ? customPlantEf : 1.5;
+
+      const beefKgCo2e = annualBeefKg * beefEf;
+      const porkKgCo2e = annualPorkKg * poultryEf;
+      const dairyKgCo2e = annualDairyKg * dairyEf;
+      const plantKgCo2e = annualPlantKg * plantEf;
 
       const totalFoodKgCo2e = beefKgCo2e + porkKgCo2e + dairyKgCo2e + plantKgCo2e;
       personalFoodTco2e = totalFoodKgCo2e / 1000;
@@ -702,9 +878,11 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
           domain: 'Diet & Nutrition',
           activity: 'Direct Dietary Intake (Mass-Based)',
           quantity: `${(annualBeefKg + annualPorkKg + annualDairyKg + annualPlantKg).toFixed(1)} kg food/yr`,
-          factor: 'Weighted category LCA (Beef 27.0, Poultry 6.9, Dairy 8.5, Plant 1.5 kg/kg)',
-          source: 'Poore & Nemecek (Science 2018) / IPCC AR6 AFOLU',
+          baseFactor: `LCA Factors (Beef ${beefEf.toFixed(1)}, Poultry ${poultryEf.toFixed(1)}, Dairy ${dairyEf.toFixed(1)}, Plant ${plantEf.toFixed(1)})`,
+          effectiveFactor: 'Direct cradle-to-farm-gate mass coefficients',
+          source: customFoodEfEnabled ? 'Custom Food LCA Study' : 'Poore & Nemecek (Science 2018) / IPCC AR6',
           boundary: '100% Personal',
+          lifecycleMode: 'Cradle-to-Retail Food System LCA',
           emissionsTco2e: personalFoodTco2e,
         });
       }
@@ -716,10 +894,15 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
     let personalGoodsTco2e = 0;
     if (includeGoods) {
       if (goodsMode === 'lifecycle_qty') {
-        const smartphonesKg = Math.max(0, Number(smartphonesQtyYear)) * 70.0;
-        const laptopsKg = Math.max(0, Number(laptopsQtyYear)) * 250.0;
-        const clothingKg = Math.max(0, Number(clothingItemsYear)) * 15.0;
-        const footwearKg = Math.max(0, Number(footwearPairsYear)) * 18.0;
+        const phoneEf = customGoodsEfEnabled && customPhoneEf > 0 ? customPhoneEf : 70.0;
+        const laptopEf = customGoodsEfEnabled && customLaptopEf > 0 ? customLaptopEf : 250.0;
+        const clothingEf = customGoodsEfEnabled && customClothingEf > 0 ? customClothingEf : 15.0;
+        const footwearEf = customGoodsEfEnabled && customFootwearEf > 0 ? customFootwearEf : 18.0;
+
+        const smartphonesKg = Math.max(0, Number(smartphonesQtyYear)) * phoneEf;
+        const laptopsKg = Math.max(0, Number(laptopsQtyYear)) * laptopEf;
+        const clothingKg = Math.max(0, Number(clothingItemsYear)) * clothingEf;
+        const footwearKg = Math.max(0, Number(footwearPairsYear)) * footwearEf;
         const totalGoodsKg = smartphonesKg + laptopsKg + clothingKg + footwearKg;
         personalGoodsTco2e = totalGoodsKg / 1000;
 
@@ -728,14 +911,15 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
             domain: 'Manufactured Goods',
             activity: 'Durable Electronics & Apparel Acquisition (LCA Qty)',
             quantity: `${smartphonesQtyYear} phones, ${laptopsQtyYear} laptops, ${clothingItemsYear} apparel items`,
-            factor: 'LCA Item Factors (Phone 70kg, PC 250kg, Garment 15kg)',
-            source: 'Apple / Dell Product Environmental Reports & WRAP UK LCA',
+            baseFactor: `Phone ${phoneEf}kg, PC ${laptopEf}kg, Garment ${clothingEf}kg, Shoes ${footwearEf}kg`,
+            effectiveFactor: 'Direct Product Environmental Reports (LCA)',
+            source: customGoodsEfEnabled ? 'Custom LCA Bill of Materials' : 'Apple / Dell Product Reports & WRAP UK',
             boundary: '100% Personal',
+            lifecycleMode: 'Cradle-to-Grave Manufacturing LCA',
             emissionsTco2e: personalGoodsTco2e,
           });
         }
       } else {
-        // Spend-based fallback
         const rateToUsd =
           spendCurrency === 'INR'
             ? 0.0118
@@ -745,7 +929,7 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
             ? 1.28
             : 1.0;
         const spendUsd = Math.max(0, Number(spendAmount)) * rateToUsd;
-        const sectorEf =
+        const defaultSectorEf =
           spendSector === 'electronics'
             ? 0.32
             : spendSector === 'clothing'
@@ -753,6 +937,7 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
             : spendSector === 'services'
             ? 0.18
             : 0.38;
+        const sectorEf = customGoodsEfEnabled && customSpendEf > 0 ? customSpendEf : defaultSectorEf;
         const goodsKg = spendUsd * sectorEf;
         personalGoodsTco2e = goodsKg / 1000;
 
@@ -761,9 +946,11 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
             domain: 'Consumer Goods',
             activity: `Discretionary Spend (${spendSector.toUpperCase()}, ${spendCurrency})`,
             quantity: `${spendCurrency} ${Number(spendAmount).toLocaleString()} ($${spendUsd.toFixed(0)} USD)`,
-            factor: `${sectorEf.toFixed(3)} kg CO₂e / USD (2024 price basis)`,
-            source: 'US EPA USEEIO v2.0.1 (2024)',
+            baseFactor: `${sectorEf.toFixed(3)} kg CO₂e / USD (2024 price basis)`,
+            effectiveFactor: `${sectorEf.toFixed(3)} kg CO₂e / USD`,
+            source: customGoodsEfEnabled ? 'Custom Environmentally Extended Input-Output Factor' : 'US EPA USEEIO v2.0.1 (2024)',
             boundary: '100% Personal',
+            lifecycleMode: 'Supply Chain EEIO Multiplier',
             emissionsTco2e: personalGoodsTco2e,
           });
         }
@@ -783,6 +970,18 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
       personalFoodTco2e +
       personalGoodsTco2e;
 
+    const operationalPersonalTco2e =
+      operationalPersonalElecTco2e +
+      operationalPersonalHeatingTco2e +
+      operationalPersonalCookingTco2e +
+      operationalPersonalWaterWasteTco2e +
+      operationalPersonalTransportTco2e +
+      operationalPersonalAviationTco2e +
+      personalFoodTco2e +
+      personalGoodsTco2e;
+
+    const upstreamLifecycleDeltaTco2e = Math.max(0, totalPersonalTco2e - operationalPersonalTco2e);
+
     const totalHouseholdGrossTco2e =
       (householdElecKg +
         householdHeatingKg +
@@ -797,19 +996,16 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
 
     const creditsNeeded = Math.ceil(totalPersonalTco2e);
 
-    const nationalAverage =
-      gridKey === 'india_cea'
-        ? 1.9
-        : gridKey === 'us_egrid'
-        ? 14.9
-        : gridKey === 'uk_desnz'
-        ? 5.2
-        : 6.8;
+    // Dynamic Regional Benchmark Comparison
+    const nationalAverage = regionalProfile.nationalAverage;
+    const benchmarkLabel = regionalProfile.benchmarkLabel;
     const pctOfAverage = nationalAverage > 0 ? Math.round((totalPersonalTco2e / nationalAverage) * 100) : 0;
 
     return {
       validResidents,
       allocationShare,
+      isLifecycle,
+      systemBoundary,
       personalElecTco2e,
       personalHeatingTco2e,
       personalCookingTco2e,
@@ -820,18 +1016,23 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
       personalFoodTco2e,
       personalGoodsTco2e,
       totalPersonalTco2e,
+      operationalPersonalTco2e,
+      upstreamLifecycleDeltaTco2e,
       totalHouseholdGrossTco2e,
       creditsNeeded,
       nationalAverage,
+      benchmarkLabel,
       pctOfAverage,
       provenanceList,
     };
   }, [
     residents,
+    systemBoundary,
     electricityKwh,
     activeGridEf,
     useCustomGridFactor,
     gridPreset,
+    regionalProfile,
     includeHeating,
     heatingType,
     districtHeatKwhMonth,
@@ -839,16 +1040,26 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
     heatPumpKwhMonth,
     heatingFuelType,
     heatingFuelQtyMonth,
+    customHeatingFuelEfEnabled,
+    customHeatingFuelEf,
     cookingFuel,
     useExactLpgKg,
     exactLpgKgMonth,
     lpgCylindersMonth,
     pngM3Month,
     biogasM3Month,
+    customCookingEfEnabled,
+    customLpgEf,
+    customPngEf,
     includeWaterWaste,
     waterM3Month,
     wasteKgWeek,
+    customWaterWasteEfEnabled,
+    customWaterEf,
+    customWasteEf,
     commuteLegs,
+    dynamicMetroEf,
+    dynamicCommuterTrainEf,
     aviationMode,
     exactFlightKmYear,
     shortHaulFlights,
@@ -861,16 +1072,26 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
     porkPoultryKgMonth,
     dairyCheeseKgMonth,
     plantGrainsKgMonth,
+    customFoodEfEnabled,
+    customBeefEf,
+    customPoultryEf,
+    customDairyEf,
+    customPlantEf,
     includeGoods,
     goodsMode,
     smartphonesQtyYear,
     laptopsQtyYear,
     clothingItemsYear,
     footwearPairsYear,
+    customGoodsEfEnabled,
+    customPhoneEf,
+    customLaptopEf,
+    customClothingEf,
+    customFootwearEf,
     spendAmount,
     spendCurrency,
     spendSector,
-    gridKey,
+    customSpendEf,
   ]);
 
   // Retirement Flow Action
@@ -914,7 +1135,7 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
             Personal &amp; Household Carbon Assessment
           </h2>
           <p className="text-xs text-emerald-200/80 max-w-2xl mt-0.5 leading-relaxed">
-            Every category defaults to zero until entered. Strictly isolates shared household utilities (divided by residents) from 100% personal transit, flights, food, and consumption goods.
+            Deterministic double-precision accounting. Strictly separates shared household utilities (divided by residents) from 100% personal transit, flights, diet, and manufactured goods.
           </p>
         </div>
 
@@ -944,6 +1165,61 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
           >
             Homestead
           </button>
+        </div>
+      </div>
+
+      {/* ============================================================== */}
+      {/* SYSTEM BOUNDARY SELECTION (TTW VS FULL LIFECYCLE WTW + T&D) */}
+      {/* ============================================================== */}
+      <div className="bg-white rounded-2xl border border-zinc-200/90 p-4 sm:p-5 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <span className="text-[11px] font-mono text-emerald-800 font-bold uppercase tracking-wider block">
+              Accounting System Boundary (ISO 14064-1 &amp; GHG Protocol Scope 3 Cat 3)
+            </span>
+            <h3 className="text-sm sm:text-base font-bold text-zinc-950">
+              Lifecycle System Boundary Selection
+            </h3>
+          </div>
+
+          {/* Segmented Switcher */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-1 bg-zinc-100 rounded-xl border border-zinc-200 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => setSystemBoundary('operational')}
+              className={`px-3 py-2 rounded-lg text-xs font-bold transition text-center ${
+                systemBoundary === 'operational'
+                  ? 'bg-white text-zinc-950 shadow-xs border border-zinc-200'
+                  : 'text-zinc-600 hover:text-zinc-950'
+              }`}
+            >
+              <span>🏛️ Statutory Operational (TTW / Scope 1+2)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSystemBoundary('lifecycle')}
+              className={`px-3 py-2 rounded-lg text-xs font-bold transition text-center ${
+                systemBoundary === 'lifecycle'
+                  ? 'bg-emerald-800 text-white shadow-xs font-extrabold'
+                  : 'text-zinc-600 hover:text-zinc-950'
+              }`}
+            >
+              <span>🔬 Full Lifecycle (WTW + T&amp;D Losses)</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200/80 text-xs text-zinc-600 leading-relaxed flex items-start gap-2.5">
+          <Info className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+          {systemBoundary === 'operational' ? (
+            <div>
+              <strong>Statutory Operational Boundary Active:</strong> Direct Tank-to-Wheel (TTW) combustion factors and statutory generation grid factors ({activeGridEf.toFixed(3)} kg/kWh). Aligns with standard corporate Scope 1 &amp; 2 carbon registers.
+            </div>
+          ) : (
+            <div>
+              <strong>Full Lifecycle Well-to-Wheel (WTW) Active:</strong> Adds Scope 3 Category 3 upstream fuel extraction &amp; refining (+18% WTT) and regional grid Transmission &amp; Distribution losses (+{regionalProfile.tdLossPercent}% for {gridPreset.country}). Accurately captures full atmospheric warming impacts.
+            </div>
+          )}
         </div>
       </div>
 
@@ -1034,6 +1310,11 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                   </span>
                   <span className="text-[11px] text-zinc-500">
                     Active Grid Factor: <code className="font-mono text-emerald-800 font-bold">{activeGridEf.toFixed(3)} kg CO₂e/kWh</code>
+                    {systemBoundary === 'lifecycle' && (
+                      <span className="text-purple-700 font-mono ml-1">
+                        (+{regionalProfile.tdLossPercent}% T&amp;D = {(activeGridEf * (1 + regionalProfile.tdLossRate)).toFixed(3)})
+                      </span>
+                    )}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -1184,37 +1465,65 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                         placeholder="e.g. 200"
                       />
                       <p className="text-[11px] text-zinc-500">
-                        ⚡ Per ISO/KTH rules, only electrical energy input is accounted for; extracted aerodynamic/geothermal heat is ambient renewable energy.
+                        ⚡ Per ISO/KTH rules, only electrical energy input is accounted for; ambient extracted thermal heat is renewable energy.
                       </p>
                     </div>
                   )}
 
                   {heatingType === 'fuel' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                      <div>
-                        <label className="text-zinc-700 block mb-1">Fuel Type:</label>
-                        <select
-                          value={heatingFuelType}
-                          onChange={(e) => setHeatingFuelType(e.target.value as any)}
-                          className="w-full bg-white border border-zinc-300 rounded px-2.5 py-1.5 text-zinc-900 text-xs"
-                        >
-                          <option value="gas">Natural Gas (2.02 kg CO₂e/m³)</option>
-                          <option value="oil">Heating Oil (2.54 kg CO₂e/L)</option>
-                          <option value="biomass">Wood Pellets (0.039 kg CO₂e/kg)</option>
-                        </select>
+                    <div className="space-y-3 pt-1">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-zinc-700 block mb-1">Fuel Type:</label>
+                          <select
+                            value={heatingFuelType}
+                            onChange={(e) => setHeatingFuelType(e.target.value as any)}
+                            className="w-full bg-white border border-zinc-300 rounded px-2.5 py-1.5 text-zinc-900 text-xs"
+                          >
+                            <option value="gas">Natural Gas (2.02 kg CO₂e/m³)</option>
+                            <option value="oil">Heating Oil (2.54 kg CO₂e/L)</option>
+                            <option value="biomass">Wood Pellets (0.039 kg CO₂e/kg)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-zinc-700 block mb-1">
+                            Monthly Quantity ({heatingFuelType === 'gas' ? 'm³' : heatingFuelType === 'oil' ? 'L' : 'kg'}):
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={heatingFuelQtyMonth}
+                            onChange={(e) => setHeatingFuelQtyMonth(Number(e.target.value))}
+                            className="w-full bg-white border border-zinc-300 rounded px-2.5 py-1.5 font-mono text-zinc-900 text-xs"
+                            placeholder="e.g. 50"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-zinc-700 block mb-1">
-                          Monthly Quantity ({heatingFuelType === 'gas' ? 'm³' : heatingFuelType === 'oil' ? 'L' : 'kg'}):
+
+                      {/* Custom Heating Fuel EF Override */}
+                      <div className="pt-1">
+                        <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-zinc-600">
+                          <input
+                            type="checkbox"
+                            checked={customHeatingFuelEfEnabled}
+                            onChange={(e) => setCustomHeatingFuelEfEnabled(e.target.checked)}
+                            className="rounded text-emerald-700 focus:ring-emerald-700"
+                          />
+                          <span>Override heating fuel emission factor</span>
                         </label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={heatingFuelQtyMonth}
-                          onChange={(e) => setHeatingFuelQtyMonth(Number(e.target.value))}
-                          className="w-full bg-white border border-zinc-300 rounded px-2.5 py-1.5 font-mono text-zinc-900 text-xs"
-                          placeholder="e.g. 50"
-                        />
+                        {customHeatingFuelEfEnabled && (
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <input
+                              type="number"
+                              step={0.001}
+                              min={0}
+                              value={customHeatingFuelEf}
+                              onChange={(e) => setCustomHeatingFuelEf(Number(e.target.value))}
+                              className="w-24 bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-xs text-zinc-900"
+                            />
+                            <span className="text-[10px] text-zinc-500 font-mono">kg CO₂e/unit</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1342,11 +1651,37 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                       />
                     </div>
                   )}
+
+                  {/* Custom LPG EF Override */}
+                  <div className="pt-2 border-t border-zinc-200/60">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-zinc-600">
+                      <input
+                        type="checkbox"
+                        checked={customCookingEfEnabled}
+                        onChange={(e) => setCustomCookingEfEnabled(e.target.checked)}
+                        className="rounded text-emerald-700 focus:ring-emerald-700"
+                      />
+                      <span>Custom LPG Emission Factor</span>
+                    </label>
+                    {customCookingEfEnabled && (
+                      <div className="mt-1 flex items-center gap-2">
+                        <input
+                          type="number"
+                          step={0.001}
+                          min={0}
+                          value={customLpgEf}
+                          onChange={(e) => setCustomLpgEf(Number(e.target.value))}
+                          className="w-24 bg-white border border-zinc-300 rounded px-2 py-0.5 font-mono text-xs text-zinc-900"
+                        />
+                        <span className="text-[10px] text-zinc-500 font-mono">kg CO₂e/kg</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
               {cookingFuel === 'png' && (
-                <div className="bg-zinc-50 p-3.5 rounded-xl border border-zinc-200 space-y-2 text-xs">
+                <div className="bg-zinc-50 p-3.5 rounded-xl border border-zinc-200 space-y-3 text-xs">
                   <div className="flex justify-between items-center">
                     <div>
                       <span className="font-bold text-zinc-800 block">Piped Natural Gas (PNG):</span>
@@ -1362,6 +1697,32 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                       />
                       <span className="text-zinc-600 font-mono">m³/mo</span>
                     </div>
+                  </div>
+
+                  {/* Custom PNG EF Override */}
+                  <div className="pt-2 border-t border-zinc-200/60">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-zinc-600">
+                      <input
+                        type="checkbox"
+                        checked={customCookingEfEnabled}
+                        onChange={(e) => setCustomCookingEfEnabled(e.target.checked)}
+                        className="rounded text-emerald-700 focus:ring-emerald-700"
+                      />
+                      <span>Custom PNG Emission Factor</span>
+                    </label>
+                    {customCookingEfEnabled && (
+                      <div className="mt-1 flex items-center gap-2">
+                        <input
+                          type="number"
+                          step={0.001}
+                          min={0}
+                          value={customPngEf}
+                          onChange={(e) => setCustomPngEf(Number(e.target.value))}
+                          className="w-24 bg-white border border-zinc-300 rounded px-2 py-0.5 font-mono text-xs text-zinc-900"
+                        />
+                        <span className="text-[10px] text-zinc-500 font-mono">kg CO₂e/m³</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1406,7 +1767,7 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                     3. Road &amp; Public Transport
                   </h3>
                   <span className="text-[11px] text-zinc-500">
-                    Multi-Leg Commute Builder · Strict Fuel-vs-Distance XOR Boundary
+                    Dynamic Regional Electric Rail · Strict Fuel-vs-Distance XOR Boundary
                   </span>
                 </div>
               </div>
@@ -1427,7 +1788,7 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                   className="bg-zinc-50 p-4 rounded-xl border border-zinc-200/80 space-y-3 text-xs relative"
                 >
                   <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold font-mono text-zinc-800">Leg #{idx + 1}:</span>
                       <select
                         value={leg.mode}
@@ -1435,8 +1796,8 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                         className="bg-white border border-zinc-300 rounded px-2 py-1 font-medium text-zinc-900 text-xs"
                       >
                         <option value="bicycle_walk">🚶 Bicycle / Walk (0.000 kg/km)</option>
-                        <option value="metro_rail">🚇 Metro / Urban Rail (0.035 kg/km)</option>
-                        <option value="commuter_train">🚆 Commuter Train (0.041 kg/km)</option>
+                        <option value="metro_rail">🚇 Metro Rail (Dynamic: {dynamicMetroEf.toFixed(3)} kg/pkm)</option>
+                        <option value="commuter_train">🚆 Commuter Train (Dynamic: {dynamicCommuterTrainEf.toFixed(3)} kg/pkm)</option>
                         <option value="public_bus">🚌 Public Bus (0.089 kg/km)</option>
                         <option value="ev">⚡ Electric Vehicle (EV)</option>
                         <option value="two_wheeler">🛵 Motorcycle / Scooter (Two-Wheeler)</option>
@@ -1457,17 +1818,45 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
 
                   {/* Mode-Specific Controls */}
                   {['bicycle_walk', 'metro_rail', 'commuter_train', 'public_bus'].includes(leg.mode) && (
-                    <div className="flex items-center justify-between gap-4 pt-1">
-                      <span className="text-zinc-600">Weekly Commute Distance:</span>
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="number"
-                          min={0}
-                          value={leg.weeklyKm}
-                          onChange={(e) => updateCommuteLeg(leg.id, { weeklyKm: Math.max(0, Number(e.target.value)) })}
-                          className="w-20 bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs text-right"
-                        />
-                        <span className="text-zinc-500 font-mono">km/week</span>
+                    <div className="space-y-2 pt-1">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-zinc-600">Weekly Commute Distance:</span>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min={0}
+                            value={leg.weeklyKm}
+                            onChange={(e) => updateCommuteLeg(leg.id, { weeklyKm: Math.max(0, Number(e.target.value)) })}
+                            className="w-20 bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs text-right"
+                          />
+                          <span className="text-zinc-500 font-mono">km/week</span>
+                        </div>
+                      </div>
+
+                      {/* Custom EF Override for Public Transit Leg */}
+                      <div className="pt-1 flex items-center justify-between text-[11px]">
+                        <label className="flex items-center gap-1.5 cursor-pointer text-zinc-600">
+                          <input
+                            type="checkbox"
+                            checked={leg.useCustomEf || false}
+                            onChange={(e) => updateCommuteLeg(leg.id, { useCustomEf: e.target.checked })}
+                            className="rounded text-emerald-700 focus:ring-emerald-700"
+                          />
+                          <span>Custom EF Override</span>
+                        </label>
+                        {leg.useCustomEf && (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              step={0.001}
+                              min={0}
+                              value={leg.customEf || 0.035}
+                              onChange={(e) => updateCommuteLeg(leg.id, { customEf: Number(e.target.value) })}
+                              className="w-20 bg-white border border-zinc-300 rounded px-1.5 py-0.5 font-mono text-xs text-right"
+                            />
+                            <span className="text-zinc-400 font-mono text-[10px]">kg/pkm</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1582,6 +1971,32 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                           </div>
                         </div>
                       )}
+
+                      {/* Custom Fuel EF Override per Leg */}
+                      <div className="pt-1 flex items-center justify-between text-[11px]">
+                        <label className="flex items-center gap-1.5 cursor-pointer text-zinc-600">
+                          <input
+                            type="checkbox"
+                            checked={leg.useCustomEf || false}
+                            onChange={(e) => updateCommuteLeg(leg.id, { useCustomEf: e.target.checked })}
+                            className="rounded text-emerald-700 focus:ring-emerald-700"
+                          />
+                          <span>Custom Fuel EF Override</span>
+                        </label>
+                        {leg.useCustomEf && (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              step={0.001}
+                              min={0}
+                              value={leg.customEf || (leg.mode === 'diesel_car' ? 2.687 : 2.315)}
+                              onChange={(e) => updateCommuteLeg(leg.id, { customEf: Number(e.target.value) })}
+                              className="w-20 bg-white border border-zinc-300 rounded px-1.5 py-0.5 font-mono text-xs text-right"
+                            />
+                            <span className="text-zinc-400 font-mono text-[10px]">kg CO₂e/L</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1895,6 +2310,63 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                     </div>
                   </div>
                 </div>
+
+                {/* Custom Food EFs Toggle */}
+                <div className="pt-1">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-zinc-600">
+                    <input
+                      type="checkbox"
+                      checked={customFoodEfEnabled}
+                      onChange={(e) => setCustomFoodEfEnabled(e.target.checked)}
+                      className="rounded text-emerald-700 focus:ring-emerald-700"
+                    />
+                    <span>Override dietary emission factor coefficients</span>
+                  </label>
+                  {customFoodEfEnabled && (
+                    <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 p-2 bg-zinc-50 border border-zinc-200 rounded-lg text-xs">
+                      <div>
+                        <span className="text-[10px] text-zinc-500 block">Beef (kg/kg):</span>
+                        <input
+                          type="number"
+                          step={0.1}
+                          value={customBeefEf}
+                          onChange={(e) => setCustomBeefEf(Number(e.target.value))}
+                          className="w-full bg-white border border-zinc-300 rounded px-1.5 py-0.5 font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-zinc-500 block">Poultry (kg/kg):</span>
+                        <input
+                          type="number"
+                          step={0.1}
+                          value={customPoultryEf}
+                          onChange={(e) => setCustomPoultryEf(Number(e.target.value))}
+                          className="w-full bg-white border border-zinc-300 rounded px-1.5 py-0.5 font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-zinc-500 block">Dairy (kg/kg):</span>
+                        <input
+                          type="number"
+                          step={0.1}
+                          value={customDairyEf}
+                          onChange={(e) => setCustomDairyEf(Number(e.target.value))}
+                          className="w-full bg-white border border-zinc-300 rounded px-1.5 py-0.5 font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-zinc-500 block">Plants (kg/kg):</span>
+                        <input
+                          type="number"
+                          step={0.1}
+                          value={customPlantEf}
+                          onChange={(e) => setCustomPlantEf(Number(e.target.value))}
+                          className="w-full bg-white border border-zinc-300 rounded px-1.5 py-0.5 font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <p className="text-[11px] text-zinc-400 italic">
@@ -1959,65 +2431,67 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                 </div>
 
                 {goodsMode === 'lifecycle_qty' ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-                    <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
-                      <div className="flex items-center gap-1 font-bold text-zinc-800 mb-1">
-                        <Smartphone className="w-3.5 h-3.5 text-zinc-500" />
-                        <span>Smartphones:</span>
+                  <div className="space-y-3 pt-1">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
+                        <div className="flex items-center gap-1 font-bold text-zinc-800 mb-1">
+                          <Smartphone className="w-3.5 h-3.5 text-zinc-500" />
+                          <span>Smartphones:</span>
+                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          value={smartphonesQtyYear}
+                          onChange={(e) => setSmartphonesQtyYear(Math.max(0, Number(e.target.value)))}
+                          className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                        />
+                        <span className="text-[10px] text-zinc-400 font-mono">70 kg/phone</span>
                       </div>
-                      <input
-                        type="number"
-                        min={0}
-                        value={smartphonesQtyYear}
-                        onChange={(e) => setSmartphonesQtyYear(Math.max(0, Number(e.target.value)))}
-                        className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
-                      />
-                      <span className="text-[10px] text-zinc-400 font-mono">70 kg/phone</span>
-                    </div>
 
-                    <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
-                      <div className="flex items-center gap-1 font-bold text-zinc-800 mb-1">
-                        <Laptop className="w-3.5 h-3.5 text-zinc-500" />
-                        <span>Laptops/PCs:</span>
+                      <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
+                        <div className="flex items-center gap-1 font-bold text-zinc-800 mb-1">
+                          <Laptop className="w-3.5 h-3.5 text-zinc-500" />
+                          <span>Laptops/PCs:</span>
+                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          value={laptopsQtyYear}
+                          onChange={(e) => setLaptopsQtyYear(Math.max(0, Number(e.target.value)))}
+                          className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                        />
+                        <span className="text-[10px] text-zinc-400 font-mono">250 kg/PC</span>
                       </div>
-                      <input
-                        type="number"
-                        min={0}
-                        value={laptopsQtyYear}
-                        onChange={(e) => setLaptopsQtyYear(Math.max(0, Number(e.target.value)))}
-                        className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
-                      />
-                      <span className="text-[10px] text-zinc-400 font-mono">250 kg/PC</span>
-                    </div>
 
-                    <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
-                      <div className="flex items-center gap-1 font-bold text-zinc-800 mb-1">
-                        <Shirt className="w-3.5 h-3.5 text-zinc-500" />
-                        <span>Apparel Items:</span>
+                      <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
+                        <div className="flex items-center gap-1 font-bold text-zinc-800 mb-1">
+                          <Shirt className="w-3.5 h-3.5 text-zinc-500" />
+                          <span>Apparel Items:</span>
+                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          value={clothingItemsYear}
+                          onChange={(e) => setClothingItemsYear(Math.max(0, Number(e.target.value)))}
+                          className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                        />
+                        <span className="text-[10px] text-zinc-400 font-mono">15 kg/garment</span>
                       </div>
-                      <input
-                        type="number"
-                        min={0}
-                        value={clothingItemsYear}
-                        onChange={(e) => setClothingItemsYear(Math.max(0, Number(e.target.value)))}
-                        className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
-                      />
-                      <span className="text-[10px] text-zinc-400 font-mono">15 kg/garment</span>
-                    </div>
 
-                    <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
-                      <div className="flex items-center gap-1 font-bold text-zinc-800 mb-1">
-                        <ShoppingBag className="w-3.5 h-3.5 text-zinc-500" />
-                        <span>Footwear:</span>
+                      <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
+                        <div className="flex items-center gap-1 font-bold text-zinc-800 mb-1">
+                          <ShoppingBag className="w-3.5 h-3.5 text-zinc-500" />
+                          <span>Footwear:</span>
+                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          value={footwearPairsYear}
+                          onChange={(e) => setFootwearPairsYear(Math.max(0, Number(e.target.value)))}
+                          className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                        />
+                        <span className="text-[10px] text-zinc-400 font-mono">18 kg/pair</span>
                       </div>
-                      <input
-                        type="number"
-                        min={0}
-                        value={footwearPairsYear}
-                        onChange={(e) => setFootwearPairsYear(Math.max(0, Number(e.target.value)))}
-                        className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
-                      />
-                      <span className="text-[10px] text-zinc-400 font-mono">18 kg/pair</span>
                     </div>
                   </div>
                 ) : (
@@ -2151,6 +2625,43 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                     </div>
                   </div>
                 </div>
+
+                {/* Custom Water & Waste Overrides */}
+                <div className="pt-2 border-t border-zinc-200/60">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-zinc-600">
+                    <input
+                      type="checkbox"
+                      checked={customWaterWasteEfEnabled}
+                      onChange={(e) => setCustomWaterWasteEfEnabled(e.target.checked)}
+                      className="rounded text-emerald-700 focus:ring-emerald-700"
+                    />
+                    <span>Custom Water &amp; Waste Emission Factors</span>
+                  </label>
+                  {customWaterWasteEfEnabled && (
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <span className="text-[10px] text-zinc-500 block">Water Factor (kg/m³):</span>
+                        <input
+                          type="number"
+                          step={0.001}
+                          value={customWaterEf}
+                          onChange={(e) => setCustomWaterEf(Number(e.target.value))}
+                          className="w-full bg-white border border-zinc-300 rounded px-2 py-0.5 font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-zinc-500 block">Waste Factor (kg/kg):</span>
+                        <input
+                          type="number"
+                          step={0.001}
+                          value={customWasteEf}
+                          onChange={(e) => setCustomWasteEf(Number(e.target.value))}
+                          className="w-full bg-white border border-zinc-300 rounded px-2 py-0.5 font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <p className="text-[11px] text-zinc-400 italic">
@@ -2164,9 +2675,14 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
         <div className="lg:col-span-5 space-y-6 lg:sticky lg:top-24">
           <div className="bg-gradient-to-br from-[#0F3A2E] to-[#0A261E] text-white rounded-2xl p-5 sm:p-7 shadow-lg space-y-6">
             <div className="border-b border-emerald-800/80 pb-4">
-              <span className="text-[11px] font-mono text-emerald-300 font-bold uppercase tracking-wider block">
-                Personal Per-Capita Footprint
-              </span>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-mono text-emerald-300 font-bold uppercase tracking-wider block">
+                  Personal Per-Capita Footprint
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-900/80 text-emerald-300 border border-emerald-700/80">
+                  {systemBoundary === 'lifecycle' ? 'WTW Full Lifecycle' : 'TTW Operational'}
+                </span>
+              </div>
               <div className="flex items-baseline gap-2 mt-1">
                 <span className="text-4xl sm:text-5xl font-mono font-black tracking-tight text-white">
                   {calculation.totalPersonalTco2e.toFixed(3)}
@@ -2185,12 +2701,12 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
               )}
             </div>
 
-            {/* National Benchmark Progress Bar */}
+            {/* Dynamic Regional Benchmark Comparison */}
             <div className="space-y-2">
               <div className="flex justify-between text-xs font-mono">
-                <span className="text-emerald-300">Vs National Average:</span>
+                <span className="text-emerald-300">Vs Regional Baseline:</span>
                 <span className="font-bold text-white">
-                  {calculation.pctOfAverage}% ({calculation.nationalAverage} tCO₂e avg)
+                  {calculation.pctOfAverage}% ({calculation.nationalAverage} tCO₂e avg · {calculation.benchmarkLabel})
                 </span>
               </div>
               <div className="w-full h-2 bg-emerald-950 rounded-full overflow-hidden border border-emerald-800/60">
@@ -2202,6 +2718,19 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                 />
               </div>
             </div>
+
+            {/* Lifecycle Upstream Addition Notice (if lifecycle active) */}
+            {systemBoundary === 'lifecycle' && calculation.upstreamLifecycleDeltaTco2e > 0 && (
+              <div className="p-3 rounded-xl bg-purple-950/70 border border-purple-800/80 text-xs font-mono space-y-1">
+                <div className="flex justify-between text-purple-200 font-bold">
+                  <span>Scope 3 Cat 3 (WTT + T&amp;D Loss):</span>
+                  <span>+{calculation.upstreamLifecycleDeltaTco2e.toFixed(3)} tCO₂e</span>
+                </div>
+                <div className="text-[10px] text-purple-300/80 leading-relaxed">
+                  Operational: {calculation.operationalPersonalTco2e.toFixed(3)} t + Upstream: {calculation.upstreamLifecycleDeltaTco2e.toFixed(3)} t
+                </div>
+              </div>
+            )}
 
             {/* Double-Precision Scope Breakdown */}
             <div className="space-y-2 pt-2 border-t border-emerald-800/80">
@@ -2335,9 +2864,11 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                     <tr>
                       <th className="px-3 py-2.5">Domain &amp; Activity</th>
                       <th className="px-3 py-2.5">Annual Activity Level</th>
-                      <th className="px-3 py-2.5">Emission Factor</th>
+                      <th className="px-3 py-2.5">Base Emission Factor</th>
+                      <th className="px-3 py-2.5">Effective Factor</th>
+                      <th className="px-3 py-2.5">System Boundary</th>
+                      <th className="px-3 py-2.5">Allocation</th>
                       <th className="px-3 py-2.5">Statutory Source</th>
-                      <th className="px-3 py-2.5">Boundary / Allocation</th>
                       <th className="px-3 py-2.5 text-right">Net tCO₂e</th>
                     </tr>
                   </thead>
@@ -2351,11 +2882,13 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                           {item.activity}
                         </td>
                         <td className="px-3 py-2 text-zinc-700 font-bold">{item.quantity}</td>
-                        <td className="px-3 py-2 text-emerald-800 font-bold">{item.factor}</td>
-                        <td className="px-3 py-2 text-zinc-600 text-[11px] max-w-[220px]">
+                        <td className="px-3 py-2 text-zinc-700 font-mono">{item.baseFactor}</td>
+                        <td className="px-3 py-2 text-emerald-800 font-bold">{item.effectiveFactor}</td>
+                        <td className="px-3 py-2 text-purple-800 text-[11px] font-semibold">{item.lifecycleMode}</td>
+                        <td className="px-3 py-2 text-zinc-600 text-[11px]">{item.boundary}</td>
+                        <td className="px-3 py-2 text-zinc-600 text-[11px] max-w-[200px]">
                           {item.source}
                         </td>
-                        <td className="px-3 py-2 text-zinc-600 text-[11px]">{item.boundary}</td>
                         <td className="px-3 py-2 text-right font-bold text-zinc-950">
                           {item.emissionsTco2e.toFixed(3)} t
                         </td>
@@ -2364,8 +2897,8 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                   </tbody>
                   <tfoot className="bg-zinc-100/80 font-bold border-t border-zinc-200 text-zinc-900">
                     <tr>
-                      <td colSpan={5} className="px-3 py-2.5 text-right uppercase text-[11px]">
-                        Personal Footprint Total (Double Precision Sum):
+                      <td colSpan={7} className="px-3 py-2.5 text-right uppercase text-[11px]">
+                        Personal Footprint Total ({systemBoundary === 'lifecycle' ? 'WTW Full Lifecycle' : 'TTW Operational'}):
                       </td>
                       <td className="px-3 py-2.5 text-right text-emerald-800 text-sm">
                         {calculation.totalPersonalTco2e.toFixed(3)} tCO₂e
@@ -2601,7 +3134,9 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
       {/* ============================================================== */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-zinc-950/95 backdrop-blur-md text-white border-t border-zinc-800 px-4 py-2.5 flex items-center justify-between shadow-2xl">
         <div>
-          <span className="text-[10px] font-mono text-emerald-400 block uppercase">Personal Footprint</span>
+          <span className="text-[10px] font-mono text-emerald-400 block uppercase">
+            Personal ({systemBoundary === 'lifecycle' ? 'WTW' : 'TTW'})
+          </span>
           <div className="flex items-baseline gap-1.5">
             <span className="text-base font-bold font-mono text-white">
               {(calculation.totalPersonalTco2e * 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-[10px] text-zinc-400 font-normal">kg</span>
