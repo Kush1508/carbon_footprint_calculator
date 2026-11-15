@@ -20,7 +20,9 @@ const calculateQuerySchema = z.object({
   role: z.enum(['individual', 'household', 'farmer', 'agriculture', 'company', 'corporate']).default('individual'),
   grid: z.enum(['india_cea', 'us_egrid', 'eu_residual', 'uk_desnz']).default('india_cea'),
 
-  // Individual / Household parameters
+  // Individual / Household parameters (KTH boundary rules)
+  residents: z.coerce.number().min(1).default(1),
+  customGridFactor: z.coerce.number().min(0).optional(),
   kwh: z.coerce.number().min(0).default(0),
   waterM3: z.coerce.number().min(0).default(0),
   hasSewage: z.coerce.boolean().default(true),
@@ -29,6 +31,13 @@ const calculateQuerySchema = z.object({
   lpgKg: z.coerce.number().min(0).default(0),
   petrolLiters: z.coerce.number().min(0).default(0),
   dieselLiters: z.coerce.number().min(0).default(0),
+  fuelLiters: z.coerce.number().min(0).optional(),
+  fuelType: z.enum(['petrol', 'diesel', 'cng']).default('petrol'),
+  flightKm: z.coerce.number().min(0).optional(),
+  cabinClass: z.enum(['economy', 'business']).default('economy'),
+  radiativeForcing: z.coerce.boolean().default(false),
+  diet: z.enum(['vegan', 'vegetarian', 'mixed', 'high_meat']).optional(),
+  goodsSpendUsd: z.coerce.number().min(0).optional(),
 
   // Farmer / Agriculture parameters (Inventory)
   dairyCattle: z.coerce.number().min(0).default(0),
@@ -285,84 +294,172 @@ function executeCalculation(params: CalculateParams) {
   const methodologies: string[] = [];
 
   if (isIndividual) {
-    // 1. Grid electricity
-    const elecKg = params.kwh * gridPreset.emissionFactorKwh;
+    const effectiveResidents = Math.max(1, params.residents || 1);
+    const effectiveGridEf =
+      params.customGridFactor !== undefined && params.customGridFactor > 0
+        ? params.customGridFactor
+        : gridPreset.emissionFactorKwh;
+
+    // 1. Grid electricity (Allocated per resident)
+    const elecKgTotal = params.kwh * effectiveGridEf;
+    const elecKgPersonal = elecKgTotal / effectiveResidents;
     if (params.kwh > 0) {
       breakdown['grid_electricity'] = {
-        kg_co2e: roundTo(elecKg, 2),
-        t_co2e: roundTo(elecKg / 1000, 4),
+        kg_co2e: roundTo(elecKgPersonal, 2),
+        t_co2e: roundTo(elecKgPersonal / 1000, 4),
         scope: 'Scope 2',
-        description: `${params.kwh} kWh × ${gridPreset.emissionFactorKwh} kg CO2e/kWh (${gridPreset.country})`,
+        description: `${params.kwh} kWh × ${effectiveGridEf} kg CO2e/kWh ÷ ${effectiveResidents} residents`,
       };
-      methodologies.push(`Electricity: ${params.kwh} kWh × ${gridPreset.emissionFactorKwh} kg CO2e/kWh [Ref: ${gridPreset.sourceAuthority}]`);
-      totalKg += elecKg;
+      methodologies.push(
+        `Electricity: (${params.kwh} kWh × ${effectiveGridEf} kg CO2e/kWh) ÷ ${effectiveResidents} residents [Ref: ${gridPreset.sourceAuthority}]`
+      );
+      totalKg += elecKgPersonal;
     }
 
-    // 2. Domestic Water
-    const waterEf = HOUSEHOLD_FACTORS.waterSupplyKgPerM3 + (params.hasSewage ? HOUSEHOLD_FACTORS.waterTreatmentKgPerM3 : 0);
-    const waterKg = params.waterM3 * waterEf;
+    // 2. Domestic Water (Allocated per resident)
+    const waterEf =
+      HOUSEHOLD_FACTORS.waterSupplyKgPerM3 +
+      (params.hasSewage ? HOUSEHOLD_FACTORS.waterTreatmentKgPerM3 : 0);
+    const waterKgTotal = params.waterM3 * waterEf;
+    const waterKgPersonal = waterKgTotal / effectiveResidents;
     if (params.waterM3 > 0) {
       breakdown['domestic_water'] = {
-        kg_co2e: roundTo(waterKg, 2),
-        t_co2e: roundTo(waterKg / 1000, 4),
+        kg_co2e: roundTo(waterKgPersonal, 2),
+        t_co2e: roundTo(waterKgPersonal / 1000, 4),
         scope: 'Scope 3',
-        description: `${params.waterM3} m³ × ${waterEf} kg CO2e/m³ (Supply + Treatment)`,
+        description: `${params.waterM3} m³ × ${waterEf} kg CO2e/m³ ÷ ${effectiveResidents} residents`,
       };
-      methodologies.push(`Water: ${params.waterM3} m³ × ${waterEf} kg CO2e/m³ [Ref: Venkatesh & Brattebø 2011]`);
-      totalKg += waterKg;
+      methodologies.push(
+        `Water: (${params.waterM3} m³ × ${waterEf} kg CO2e/m³) ÷ ${effectiveResidents} residents [Ref: Venkatesh & Brattebø 2011]`
+      );
+      totalKg += waterKgPersonal;
     }
 
-    // 3. Municipal Solid Waste
+    // 3. Municipal Solid Waste (Allocated per resident)
     let wasteEf = HOUSEHOLD_FACTORS.wasteLandfillKgPerKg;
     if (params.wasteRoute === 'compost') wasteEf = HOUSEHOLD_FACTORS.wasteCompostKgPerKg;
     if (params.wasteRoute === 'recycling') wasteEf = HOUSEHOLD_FACTORS.wasteRecyclingKgPerKg;
-    const wasteKgAnnual = params.wasteKg * 52 * wasteEf;
+    const wasteKgAnnualTotal = params.wasteKg * 52 * wasteEf;
+    const wasteKgAnnualPersonal = wasteKgAnnualTotal / effectiveResidents;
     if (params.wasteKg > 0) {
       breakdown['municipal_waste'] = {
-        kg_co2e: roundTo(wasteKgAnnual, 2),
-        t_co2e: roundTo(wasteKgAnnual / 1000, 4),
+        kg_co2e: roundTo(wasteKgAnnualPersonal, 2),
+        t_co2e: roundTo(wasteKgAnnualPersonal / 1000, 4),
         scope: 'Scope 3',
-        description: `${params.wasteKg} kg/wk × 52 wks × ${wasteEf} kg CO2e/kg (${params.wasteRoute})`,
+        description: `${params.wasteKg} kg/wk × 52 wks × ${wasteEf} kg CO2e/kg ÷ ${effectiveResidents} residents`,
       };
-      methodologies.push(`Waste: ${params.wasteKg} kg/wk × 52 × ${wasteEf} kg CO2e/kg [Ref: US EPA WARM v15 / IPCC 2006]`);
-      totalKg += wasteKgAnnual;
+      methodologies.push(
+        `Waste: (${params.wasteKg} kg/wk × 52 × ${wasteEf} kg CO2e/kg) ÷ ${effectiveResidents} residents [Ref: US EPA WARM v15 / IPCC 2006]`
+      );
+      totalKg += wasteKgAnnualPersonal;
     }
 
-    // 4. LPG
-    const lpgKgAnnual = params.lpgKg * FUEL_FACTORS.lpg.efKgPerUnit;
+    // 4. LPG Cooking Gas (Allocated per resident)
+    const lpgKgAnnualTotal = params.lpgKg * FUEL_FACTORS.lpg.efKgPerUnit;
+    const lpgKgAnnualPersonal = lpgKgAnnualTotal / effectiveResidents;
     if (params.lpgKg > 0) {
       breakdown['lpg_cooking'] = {
-        kg_co2e: roundTo(lpgKgAnnual, 2),
-        t_co2e: roundTo(lpgKgAnnual / 1000, 4),
+        kg_co2e: roundTo(lpgKgAnnualPersonal, 2),
+        t_co2e: roundTo(lpgKgAnnualPersonal / 1000, 4),
         scope: 'Scope 1',
-        description: `${params.lpgKg} kg LPG × ${FUEL_FACTORS.lpg.efKgPerUnit} kg CO2e/kg`,
+        description: `${params.lpgKg} kg LPG × ${FUEL_FACTORS.lpg.efKgPerUnit} kg CO2e/kg ÷ ${effectiveResidents} residents`,
       };
-      methodologies.push(`LPG: ${params.lpgKg} kg × ${FUEL_FACTORS.lpg.efKgPerUnit} kg CO2e/kg [Ref: IPCC 2006 Vol 2 Stationary Combustion]`);
-      totalKg += lpgKgAnnual;
+      methodologies.push(
+        `LPG: (${params.lpgKg} kg × ${FUEL_FACTORS.lpg.efKgPerUnit} kg CO2e/kg) ÷ ${effectiveResidents} residents [Ref: IPCC 2006 Vol 2 Stationary Combustion]`
+      );
+      totalKg += lpgKgAnnualPersonal;
     }
 
-    // 5. Petrol & Diesel
-    if (params.petrolLiters > 0) {
-      const petrolKg = params.petrolLiters * FUEL_FACTORS.petrol.efKgPerUnit;
-      breakdown['petrol_transport'] = {
-        kg_co2e: roundTo(petrolKg, 2),
-        t_co2e: roundTo(petrolKg / 1000, 4),
+    // 5. Road Transport (Strict XOR: If fuelLiters provided, calculate fuel receipt)
+    if (params.fuelLiters !== undefined && params.fuelLiters > 0) {
+      const fuelEf =
+        params.fuelType === 'diesel' ? 2.687 : params.fuelType === 'cng' ? 2.750 : 2.315;
+      const fuelKg = params.fuelLiters * fuelEf;
+      breakdown['road_transport_receipt'] = {
+        kg_co2e: roundTo(fuelKg, 2),
+        t_co2e: roundTo(fuelKg / 1000, 4),
         scope: 'Scope 1',
-        description: `${params.petrolLiters} L Petrol × ${FUEL_FACTORS.petrol.efKgPerUnit} kg CO2e/L`,
+        description: `${params.fuelLiters} L ${params.fuelType} × ${fuelEf} kg CO2e/L (Method A Fuel Receipt)`,
       };
-      methodologies.push(`Petrol: ${params.petrolLiters} L × ${FUEL_FACTORS.petrol.efKgPerUnit} kg CO2e/L [Ref: IPCC 2006 Vol 2 Mobile Combustion]`);
-      totalKg += petrolKg;
+      methodologies.push(
+        `Transport XOR: ${params.fuelLiters} L × ${fuelEf} kg CO2e/L [Direct Fuel Combustion]`
+      );
+      totalKg += fuelKg;
+    } else {
+      if (params.petrolLiters > 0) {
+        const petrolKg = params.petrolLiters * FUEL_FACTORS.petrol.efKgPerUnit;
+        breakdown['petrol_transport'] = {
+          kg_co2e: roundTo(petrolKg, 2),
+          t_co2e: roundTo(petrolKg / 1000, 4),
+          scope: 'Scope 1',
+          description: `${params.petrolLiters} L Petrol × ${FUEL_FACTORS.petrol.efKgPerUnit} kg CO2e/L`,
+        };
+        methodologies.push(
+          `Petrol: ${params.petrolLiters} L × ${FUEL_FACTORS.petrol.efKgPerUnit} kg CO2e/L [Ref: IPCC 2006 Vol 2 Mobile Combustion]`
+        );
+        totalKg += petrolKg;
+      }
+      if (params.dieselLiters > 0) {
+        const dieselKg = params.dieselLiters * FUEL_FACTORS.diesel.efKgPerUnit;
+        breakdown['diesel_transport'] = {
+          kg_co2e: roundTo(dieselKg, 2),
+          t_co2e: roundTo(dieselKg / 1000, 4),
+          scope: 'Scope 1',
+          description: `${params.dieselLiters} L Diesel × ${FUEL_FACTORS.diesel.efKgPerUnit} kg CO2e/L`,
+        };
+        methodologies.push(
+          `Diesel: ${params.dieselLiters} L × ${FUEL_FACTORS.diesel.efKgPerUnit} kg CO2e/L [Ref: IPCC 2006 Vol 2 Mobile Combustion]`
+        );
+        totalKg += dieselKg;
+      }
     }
-    if (params.dieselLiters > 0) {
-      const dieselKg = params.dieselLiters * FUEL_FACTORS.diesel.efKgPerUnit;
-      breakdown['diesel_transport'] = {
-        kg_co2e: roundTo(dieselKg, 2),
-        t_co2e: roundTo(dieselKg / 1000, 4),
-        scope: 'Scope 1',
-        description: `${params.dieselLiters} L Diesel × ${FUEL_FACTORS.diesel.efKgPerUnit} kg CO2e/L`,
+
+    // 6. Aviation (Distance, Cabin Class & Radiative Forcing)
+    if (params.flightKm !== undefined && params.flightKm > 0) {
+      const cabinMultiplier = params.cabinClass === 'business' ? 2.0 : 1.0;
+      const rfMultiplier = params.radiativeForcing ? 1.9 : 1.0;
+      const flightKg = params.flightKm * 0.115 * cabinMultiplier * rfMultiplier;
+      breakdown['aviation'] = {
+        kg_co2e: roundTo(flightKg, 2),
+        t_co2e: roundTo(flightKg / 1000, 4),
+        scope: 'Scope 3',
+        description: `${params.flightKm} km flight × 0.115 kg/pkm × ${cabinMultiplier}x cabin × ${rfMultiplier}x RF`,
       };
-      methodologies.push(`Diesel: ${params.dieselLiters} L × ${FUEL_FACTORS.diesel.efKgPerUnit} kg CO2e/L [Ref: IPCC 2006 Vol 2 Mobile Combustion]`);
-      totalKg += dieselKg;
+      methodologies.push(
+        `Aviation: ${params.flightKm} km × 0.115 kg/km [Cabin: ${params.cabinClass}, RF: ${
+          params.radiativeForcing ? '1.9x' : '1.0x'
+        }]`
+      );
+      totalKg += flightKg;
+    }
+
+    // 7. Diet
+    if (params.diet) {
+      const dietFactors = { vegan: 1020, vegetarian: 1460, mixed: 2050, high_meat: 3100 };
+      const dietKg = dietFactors[params.diet] || 2050;
+      breakdown['diet_lifecycle'] = {
+        kg_co2e: roundTo(dietKg, 2),
+        t_co2e: roundTo(dietKg / 1000, 4),
+        scope: 'Scope 3',
+        description: `${params.diet} diet annual consumption footprint`,
+      };
+      methodologies.push(
+        `Diet: ${params.diet} profile (${dietKg} kg CO2e/yr) [Ref: Poore & Nemecek 2018]`
+      );
+      totalKg += dietKg;
+    }
+
+    // 8. Goods Spend
+    if (params.goodsSpendUsd !== undefined && params.goodsSpendUsd > 0) {
+      const goodsKg = params.goodsSpendUsd * 0.28;
+      breakdown['consumer_goods'] = {
+        kg_co2e: roundTo(goodsKg, 2),
+        t_co2e: roundTo(goodsKg / 1000, 4),
+        scope: 'Scope 3',
+        description: `$${params.goodsSpendUsd} spend × 0.280 kg CO2e/$ (USEEIO consumer goods)`,
+      };
+      methodologies.push(`Goods: $${params.goodsSpendUsd} × 0.280 kg CO2e/$ [USEEIO]`);
+      totalKg += goodsKg;
     }
   } else if (isFarmer) {
     // 1. Enteric Fermentation

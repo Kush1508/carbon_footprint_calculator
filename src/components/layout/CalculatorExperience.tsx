@@ -49,7 +49,7 @@ export function CalculatorExperience() {
               }`}
             >
               <Zap className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${mode === 'quick' ? 'text-amber-500 fill-amber-500' : 'text-zinc-500'}`} />
-              <span className="whitespace-nowrap">⚡ Quick Household Estimate (60s)</span>
+              <span className="whitespace-nowrap">⚡ Personal &amp; Household Calculator (Quick / Exact)</span>
             </button>
 
             {/* Tab 2: Registry-Grade Audit & Issuance */}

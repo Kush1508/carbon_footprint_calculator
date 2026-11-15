@@ -295,39 +295,45 @@ export default function Page() {
               </div>
             </article>
 
-            {/* Registry Crediting & Issuance Column */}
+            {/* Registry Crediting & Personal Boundary Column */}
             <article className="border border-zinc-200 rounded-xl p-5 bg-zinc-50/50">
               <div className="flex items-center gap-2 mb-3">
                 <div className="p-1.5 bg-emerald-100 rounded text-emerald-800">
                   <Scale className="w-4 h-4" />
                 </div>
                 <h2 className="text-base font-bold text-zinc-900">
-                  4. Statutory Registry Crediting &amp; Issuance (Verra, Gold Standard &amp; BEE CCTS)
+                  4. Statutory Registry Crediting &amp; Personal Boundary Rules
                 </h2>
               </div>
               <p className="text-xs text-zinc-600 mb-4 leading-relaxed">
                 Applies institutional carbon crediting methodologies (ISO 14064-2, Verra VM0042, CDM ACM0002,
-                and BEE CCTS) for baseline calculations, permanence buffer pools, and statutory carbon accounting.
+                BEE CCTS) along with KTH lifecycle resident allocation and strict double-counting prevention.
               </p>
 
               <div className="space-y-3 font-mono text-[11px]">
                 <div className="bg-white p-2.5 rounded border border-zinc-200">
                   <div className="font-semibold text-zinc-800 mb-1">Master Net Crediting Equation:</div>
-                  <div className="text-zinc-600">Net Verified Credits (tCO2e) = BE - PE - LE - Buffer</div>
-                  <div className="text-[10px] text-zinc-400 mt-1">ISO 14064-2: Baseline minus project emissions, leakage, and risk reserve</div>
+                  <div className="text-zinc-600">Net Credits (tCO2e) = BE - PE - LE - 15% Buffer</div>
+                  <div className="text-[10px] text-zinc-400 mt-1">ISO 14064-2: Baseline minus project emissions, leakage &amp; 15% permanence buffer</div>
                 </div>
 
                 <div className="bg-white p-2.5 rounded border border-zinc-200">
-                  <div className="font-semibold text-zinc-800 mb-1">Verra VM0042 Soil Carbon &amp; Agroforestry:</div>
-                  <div className="text-zinc-600">SOC (tCO2e/ha) = BD × d × Δ%C × (1 - CF) × 100 × (44/12)</div>
-                  <div className="text-[10px] text-zinc-400 mt-1">Mandatory 15% Reversal Risk Buffer Pool deduction &amp; smallholder aggregator eligibility</div>
+                  <div className="font-semibold text-zinc-800 mb-1">Shared Household Allocation (KTH Rules):</div>
+                  <div className="text-zinc-600">E_personal = E_household ÷ residents</div>
+                  <div className="text-[10px] text-zinc-400 mt-1">Divides shared home electricity, cooking gas, water, and waste per resident</div>
                 </div>
 
                 <div className="bg-white p-2.5 rounded border border-zinc-200">
-                  <div className="font-semibold text-zinc-800 mb-1">India BEE CCTS Intensity Formula:</div>
-                  <div className="text-zinc-600">Actual GEI = (Scope 1 + Scope 2 tCO2e) / Production Output (t)</div>
+                  <div className="font-semibold text-zinc-800 mb-1">Road Transport XOR Boundary:</div>
+                  <div className="text-zinc-600">Method A (Liters × EF) XOR Method B (km × L/100km × EF)</div>
+                  <div className="text-[10px] text-zinc-400 mt-1">Strict either/or boundary prevents double-counting vehicle emissions</div>
+                </div>
+
+                <div className="bg-white p-2.5 rounded border border-zinc-200">
+                  <div className="font-semibold text-zinc-800 mb-1">India BEE CCTS GEI Intensity:</div>
+                  <div className="text-zinc-600">Actual GEI = (Scope 1 + Scope 2) / Production (t)</div>
                   <div className="text-zinc-600 mt-0.5">CCCs = (Target GEI - Actual GEI) × Output</div>
-                  <div className="text-[10px] text-zinc-400 mt-1">Bureau of Energy Efficiency Carbon Credit Certificates (1 CCC = 1 tCO2e)</div>
+                  <div className="text-[10px] text-zinc-400 mt-1">Bureau of Energy Efficiency compliance units (1 CCC = 1 tCO2e)</div>
                 </div>
               </div>
             </article>
