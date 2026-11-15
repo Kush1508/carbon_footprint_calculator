@@ -28,6 +28,16 @@ import {
   Train,
   Bike,
   Bus,
+  ShoppingBag,
+  Smartphone,
+  Laptop,
+  Shirt,
+  Beef,
+  Apple,
+  RotateCcw,
+  FileText,
+  Sparkles,
+  Layers,
 } from 'lucide-react';
 import { REGIONAL_GRID_PRESETS } from '../../engine/factors';
 import { RegionalGridKey } from '../../types';
@@ -36,7 +46,9 @@ interface QuickHouseholdCalculatorProps {
   onSwitchToAudit?: () => void;
 }
 
-export type CookingFuelType = 'lpg' | 'png' | 'biogas' | 'electric_induction';
+export type CookingFuelType = 'none' | 'lpg' | 'png' | 'biogas' | 'electric_induction';
+
+export type HeatingType = 'none' | 'district_heat' | 'heat_pump' | 'fuel';
 
 export type TransitMode =
   | 'bicycle_walk'
@@ -50,63 +62,123 @@ export type TransitMode =
 
 export interface CommuteLeg {
   id: string;
+  name: string;
   mode: TransitMode;
-  method: 'distance' | 'fuel_receipt'; // for two_wheeler, petrol_car, diesel_car
+  method: 'distance' | 'fuel_receipt';
   weeklyKm: number;
   efficiency: number; // L/100km or kWh/km
   fuelLitersMonth: number;
+  occupancy: number;
+}
+
+export interface ProvenanceItem {
+  domain: string;
+  activity: string;
+  quantity: string;
+  factor: string;
+  source: string;
+  boundary: string;
+  emissionsTco2e: number;
 }
 
 export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalculatorProps) {
-  // 1. Household Allocation
+  // =========================================================================
+  // 1. SHARED HOUSEHOLD ALLOCATION
+  // =========================================================================
   const [residents, setResidents] = useState<number>(1);
 
-  // 2. Electricity & Grid
-  const [electricityKwh, setElectricityKwh] = useState<number>(300);
+  // =========================================================================
+  // 2. HOME ENERGY (ELECTRICITY, HEATING & COOKING)
+  // =========================================================================
+  // Electricity
+  const [electricityKwh, setElectricityKwh] = useState<number>(0);
   const [gridKey, setGridKey] = useState<RegionalGridKey>('india_cea');
   const [useCustomGridFactor, setUseCustomGridFactor] = useState<boolean>(false);
   const [customGridFactor, setCustomGridFactor] = useState<number>(0.716);
 
-  // 3. Multi-Fuel Cooking Energy
-  const [cookingFuel, setCookingFuel] = useState<CookingFuelType>('lpg');
-  const [lpgCylinders, setLpgCylinders] = useState<number>(1); // 14.2 kg standard cylinder
+  // Heating (Default: None / 0)
+  const [includeHeating, setIncludeHeating] = useState<boolean>(false);
+  const [heatingType, setHeatingType] = useState<HeatingType>('district_heat');
+  const [districtHeatKwhMonth, setDistrictHeatKwhMonth] = useState<number>(0);
+  const [districtHeatEf, setDistrictHeatEf] = useState<number>(0.055);
+  const [heatPumpKwhMonth, setHeatPumpKwhMonth] = useState<number>(0);
+  const [heatingFuelType, setHeatingFuelType] = useState<'gas' | 'oil' | 'biomass'>('gas');
+  const [heatingFuelQtyMonth, setHeatingFuelQtyMonth] = useState<number>(0);
+
+  // Cooking (Default: None / 0)
+  const [cookingFuel, setCookingFuel] = useState<CookingFuelType>('none');
+  const [lpgCylindersMonth, setLpgCylindersMonth] = useState<number>(0);
   const [useExactLpgKg, setUseExactLpgKg] = useState<boolean>(false);
-  const [exactLpgKgMonth, setExactLpgKgMonth] = useState<number>(14.2);
-  const [pngM3Month, setPngM3Month] = useState<number>(15);
-  const [biogasM3Month, setBiogasM3Month] = useState<number>(20);
+  const [exactLpgKgMonth, setExactLpgKgMonth] = useState<number>(0);
+  const [pngM3Month, setPngM3Month] = useState<number>(0);
+  const [biogasM3Month, setBiogasM3Month] = useState<number>(0);
 
-  // 4. Opt-In Domestic Water & Municipal Solid Waste (No silent default)
-  const [includeWaterWaste, setIncludeWaterWaste] = useState<boolean>(false);
-  const [waterM3Month, setWaterM3Month] = useState<number>(10);
-  const [wasteKgWeek, setWasteKgWeek] = useState<number>(5);
-
-  // 5. Multi-Leg Commute (Separated Transit Modes & Strict XOR)
+  // =========================================================================
+  // 3. ROAD & PUBLIC TRANSPORT (MULTI-LEG BUILDER)
+  // =========================================================================
   const [commuteLegs, setCommuteLegs] = useState<CommuteLeg[]>([
     {
       id: 'leg-1',
-      mode: 'two_wheeler',
+      name: 'Primary Daily Commute',
+      mode: 'metro_rail',
       method: 'distance',
-      weeklyKm: 75,
-      efficiency: 2.5,
-      fuelLitersMonth: 15,
+      weeklyKm: 0,
+      efficiency: 0,
+      fuelLitersMonth: 0,
+      occupancy: 1,
     },
   ]);
 
-  // 6. Aviation (Flights, Cabin Class, High-Altitude Radiative Forcing)
-  const [aviationMode, setAviationMode] = useState<'counts' | 'exact_km'>('counts');
-  const [shortHaulFlights, setShortHaulFlights] = useState<number>(1);
+  // =========================================================================
+  // 4. AVIATION (PASSENGER DISTANCE, ROUTE CLASS & OPTIONAL NON-CO2)
+  // =========================================================================
+  const [aviationMode, setAviationMode] = useState<'exact_km' | 'counts'>('exact_km');
+  const [exactFlightKmYear, setExactFlightKmYear] = useState<number>(0);
+  const [shortHaulFlights, setShortHaulFlights] = useState<number>(0);
   const [longHaulFlights, setLongHaulFlights] = useState<number>(0);
-  const [exactFlightKmYear, setExactFlightKmYear] = useState<number>(2500);
-  const [cabinClass, setCabinClass] = useState<'economy' | 'business'>('economy');
-  const [includeRadiativeForcing, setIncludeRadiativeForcing] = useState<boolean>(true);
+  const [flightRouteClass, setFlightRouteClass] = useState<'short_econ' | 'long_econ' | 'business_first' | 'custom'>('short_econ');
+  const [customAviationEf, setCustomAviationEf] = useState<number>(0.115);
+  const [includeRadiativeForcing, setIncludeRadiativeForcing] = useState<boolean>(false);
 
-  // 7. Optional Lifestyle Add-ons (Diet & Goods)
-  const [showLifestyle, setShowLifestyle] = useState<boolean>(false);
-  const [dietProfile, setDietProfile] = useState<'mixed' | 'vegan' | 'vegetarian' | 'high_meat'>('mixed');
-  const [goodsSpendAnnual, setGoodsSpendAnnual] = useState<number>(0);
-  const [spendCurrency, setSpendCurrency] = useState<'USD' | 'INR'>('INR');
+  // =========================================================================
+  // 5. FOOD & DIET (MASS IN KG × EF — OPT-IN, DEFAULT 0)
+  // =========================================================================
+  const [includeFood, setIncludeFood] = useState<boolean>(false);
+  const [beefLambKgMonth, setBeefLambKgMonth] = useState<number>(0);
+  const [porkPoultryKgMonth, setPorkPoultryKgMonth] = useState<number>(0);
+  const [dairyCheeseKgMonth, setDairyCheeseKgMonth] = useState<number>(0);
+  const [plantGrainsKgMonth, setPlantGrainsKgMonth] = useState<number>(0);
 
-  // Retirement Flow State
+  // =========================================================================
+  // 6. GOODS & SERVICES (LIFECYCLE QUANTITY PREFERRED / SPEND FALLBACK — DEFAULT 0)
+  // =========================================================================
+  const [includeGoods, setIncludeGoods] = useState<boolean>(false);
+  const [goodsMode, setGoodsMode] = useState<'lifecycle_qty' | 'spend'>('lifecycle_qty');
+  // Lifecycle Quantity inputs
+  const [smartphonesQtyYear, setSmartphonesQtyYear] = useState<number>(0);
+  const [laptopsQtyYear, setLaptopsQtyYear] = useState<number>(0);
+  const [clothingItemsYear, setClothingItemsYear] = useState<number>(0);
+  const [footwearPairsYear, setFootwearPairsYear] = useState<number>(0);
+  // Spend Fallback inputs
+  const [spendAmount, setSpendAmount] = useState<number>(0);
+  const [spendCurrency, setSpendCurrency] = useState<'INR' | 'USD' | 'EUR' | 'GBP'>('INR');
+  const [spendSector, setSpendSector] = useState<'electronics' | 'clothing' | 'services' | 'appliances'>('electronics');
+
+  // =========================================================================
+  // 7. WATER & MUNICIPAL WASTE (OPT-IN, DEFAULT 0)
+  // =========================================================================
+  const [includeWaterWaste, setIncludeWaterWaste] = useState<boolean>(false);
+  const [waterM3Month, setWaterM3Month] = useState<number>(0);
+  const [wasteKgWeek, setWasteKgWeek] = useState<number>(0);
+
+  // =========================================================================
+  // UI TOGGLE: AUDIT PROVENANCE LEDGER
+  // =========================================================================
+  const [showProvenanceLedger, setShowProvenanceLedger] = useState<boolean>(false);
+
+  // =========================================================================
+  // 8. OFFSET RETIREMENT FLOW STATE
+  // =========================================================================
   const [selectedProjectId, setSelectedProjectId] = useState<'india_renewables' | 'verra_vm0042_soil' | 'gold_standard_cookstoves'>('india_renewables');
   const [beneficiaryName, setBeneficiaryName] = useState<string>('My Household');
   const [isRetiring, setIsRetiring] = useState<boolean>(false);
@@ -116,15 +188,17 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   const gridPreset = REGIONAL_GRID_PRESETS[gridKey] || REGIONAL_GRID_PRESETS.india_cea;
   const activeGridEf = useCustomGridFactor && customGridFactor > 0 ? customGridFactor : gridPreset.emissionFactorKwh;
 
-  // Commute Leg Management
+  // Commute Leg Handlers
   const addCommuteLeg = () => {
     const newLeg: CommuteLeg = {
       id: `leg-${Date.now()}`,
-      mode: 'metro_rail',
+      name: `Commute Leg ${commuteLegs.length + 1}`,
+      mode: 'public_bus',
       method: 'distance',
-      weeklyKm: 40,
+      weeklyKm: 0,
       efficiency: 0,
       fuelLitersMonth: 0,
+      occupancy: 1,
     };
     setCommuteLegs([...commuteLegs, newLeg]);
   };
@@ -132,6 +206,20 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   const removeCommuteLeg = (id: string) => {
     if (commuteLegs.length > 1) {
       setCommuteLegs(commuteLegs.filter((leg) => leg.id !== id));
+    } else {
+      // Reset the single leg to 0
+      setCommuteLegs([
+        {
+          id: 'leg-1',
+          name: 'Primary Daily Commute',
+          mode: 'bicycle_walk',
+          method: 'distance',
+          weeklyKm: 0,
+          efficiency: 0,
+          fuelLitersMonth: 0,
+          occupancy: 1,
+        },
+      ]);
     }
   };
 
@@ -140,12 +228,11 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
       commuteLegs.map((leg) => {
         if (leg.id !== id) return leg;
         const updated = { ...leg, ...updates };
-        // Sync default efficiency when mode changes
         if (updates.mode) {
           if (updates.mode === 'petrol_car') updated.efficiency = 7.5;
           else if (updates.mode === 'diesel_car') updated.efficiency = 6.0;
           else if (updates.mode === 'two_wheeler') updated.efficiency = 2.5;
-          else if (updates.mode === 'ev') updated.efficiency = 0.15; // kWh/km
+          else if (updates.mode === 'ev') updated.efficiency = 0.15;
           else updated.efficiency = 0;
         }
         return updated;
@@ -153,156 +240,609 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
     );
   };
 
-  // Full double-precision floating-point calculation
-  const footprint = useMemo(() => {
+  // Quick Archetype Presets
+  const applyPreset = (preset: 'zero' | 'urban_professional' | 'rural_homestead') => {
+    if (preset === 'zero') {
+      setResidents(1);
+      setElectricityKwh(0);
+      setIncludeHeating(false);
+      setHeatingType('district_heat');
+      setDistrictHeatKwhMonth(0);
+      setHeatPumpKwhMonth(0);
+      setHeatingFuelQtyMonth(0);
+      setCookingFuel('none');
+      setLpgCylindersMonth(0);
+      setPngM3Month(0);
+      setBiogasM3Month(0);
+      setCommuteLegs([
+        {
+          id: 'leg-1',
+          name: 'Primary Daily Commute',
+          mode: 'bicycle_walk',
+          method: 'distance',
+          weeklyKm: 0,
+          efficiency: 0,
+          fuelLitersMonth: 0,
+          occupancy: 1,
+        },
+      ]);
+      setExactFlightKmYear(0);
+      setShortHaulFlights(0);
+      setLongHaulFlights(0);
+      setIncludeRadiativeForcing(false);
+      setIncludeFood(false);
+      setBeefLambKgMonth(0);
+      setPorkPoultryKgMonth(0);
+      setDairyCheeseKgMonth(0);
+      setPlantGrainsKgMonth(0);
+      setIncludeGoods(false);
+      setSmartphonesQtyYear(0);
+      setLaptopsQtyYear(0);
+      setClothingItemsYear(0);
+      setFootwearPairsYear(0);
+      setSpendAmount(0);
+      setIncludeWaterWaste(false);
+      setWaterM3Month(0);
+      setWasteKgWeek(0);
+    } else if (preset === 'urban_professional') {
+      setResidents(2);
+      setElectricityKwh(250);
+      setIncludeHeating(false);
+      setCookingFuel('png');
+      setPngM3Month(14);
+      setCommuteLegs([
+        {
+          id: 'leg-1',
+          name: 'Metro Commute',
+          mode: 'metro_rail',
+          method: 'distance',
+          weeklyKm: 60,
+          efficiency: 0,
+          fuelLitersMonth: 0,
+          occupancy: 1,
+        },
+      ]);
+      setAviationMode('counts');
+      setShortHaulFlights(2);
+      setLongHaulFlights(0);
+      setIncludeRadiativeForcing(false);
+      setIncludeFood(true);
+      setBeefLambKgMonth(1);
+      setPorkPoultryKgMonth(4);
+      setDairyCheeseKgMonth(8);
+      setPlantGrainsKgMonth(25);
+      setIncludeGoods(true);
+      setGoodsMode('lifecycle_qty');
+      setSmartphonesQtyYear(1);
+      setClothingItemsYear(8);
+      setIncludeWaterWaste(true);
+      setWaterM3Month(8);
+      setWasteKgWeek(4);
+    } else if (preset === 'rural_homestead') {
+      setResidents(4);
+      setElectricityKwh(120);
+      setIncludeHeating(false);
+      setCookingFuel('biogas');
+      setBiogasM3Month(25);
+      setCommuteLegs([
+        {
+          id: 'leg-1',
+          name: 'Local Transport',
+          mode: 'two_wheeler',
+          method: 'distance',
+          weeklyKm: 30,
+          efficiency: 2.5,
+          fuelLitersMonth: 0,
+          occupancy: 1,
+        },
+      ]);
+      setExactFlightKmYear(0);
+      setShortHaulFlights(0);
+      setLongHaulFlights(0);
+      setIncludeRadiativeForcing(false);
+      setIncludeFood(true);
+      setBeefLambKgMonth(0);
+      setPorkPoultryKgMonth(2);
+      setDairyCheeseKgMonth(10);
+      setPlantGrainsKgMonth(35);
+      setIncludeGoods(false);
+      setIncludeWaterWaste(false);
+    }
+  };
+
+  // =========================================================================
+  // CORE CALCULATION ENGINE (FULL DOUBLE-PRECISION FLOATING-POINT MATH)
+  // =========================================================================
+  const calculation = useMemo(() => {
     const validResidents = Math.max(1, Number(residents) || 1);
+    const allocationShare = 1 / validResidents;
+    const provenanceList: ProvenanceItem[] = [];
 
-    // 1. Electricity (Shared across residents)
-    const annualElecKwh = Number(electricityKwh) * 12;
+    // -----------------------------------------------------------------------
+    // 1. Grid Electricity (Shared)
+    // -----------------------------------------------------------------------
+    const annualElecKwh = Math.max(0, Number(electricityKwh)) * 12;
     const householdElecKg = annualElecKwh * activeGridEf;
-    const personalElecTco2e = (householdElecKg / validResidents) / 1000;
+    const personalElecTco2e = (householdElecKg * allocationShare) / 1000;
 
-    // 2. Multi-Fuel Cooking Energy (Shared across residents)
+    if (annualElecKwh > 0) {
+      provenanceList.push({
+        domain: 'Home Energy',
+        activity: 'Grid Electricity Consumption',
+        quantity: `${annualElecKwh.toLocaleString()} kWh/yr`,
+        factor: `${activeGridEf.toFixed(3)} kg CO₂e/kWh`,
+        source: useCustomGridFactor ? 'Custom Utility Supplier Tariff' : gridPreset.sourceAuthority,
+        boundary: `Shared ÷ ${validResidents} residents (${(allocationShare * 100).toFixed(1)}%)`,
+        emissionsTco2e: personalElecTco2e,
+      });
+    }
+
+    // -----------------------------------------------------------------------
+    // 2. Home Heating (Shared)
+    // -----------------------------------------------------------------------
+    let householdHeatingKg = 0;
+    if (includeHeating) {
+      if (heatingType === 'district_heat') {
+        const annualHeatKwh = Math.max(0, Number(districtHeatKwhMonth)) * 12;
+        householdHeatingKg = annualHeatKwh * Math.max(0, Number(districtHeatEf));
+        if (annualHeatKwh > 0) {
+          provenanceList.push({
+            domain: 'Home Energy',
+            activity: 'District Heating Network',
+            quantity: `${annualHeatKwh.toLocaleString()} kWh/yr`,
+            factor: `${districtHeatEf.toFixed(3)} kg CO₂e/kWh`,
+            source: 'Nordic / EU District Heat Benchmark (ISO 14064)',
+            boundary: `Shared ÷ ${validResidents} residents`,
+            emissionsTco2e: (householdHeatingKg * allocationShare) / 1000,
+          });
+        }
+      } else if (heatingType === 'heat_pump') {
+        const annualCompressorKwh = Math.max(0, Number(heatPumpKwhMonth)) * 12;
+        householdHeatingKg = annualCompressorKwh * activeGridEf;
+        if (annualCompressorKwh > 0) {
+          provenanceList.push({
+            domain: 'Home Energy',
+            activity: 'Heat Pump (Compressor Electricity)',
+            quantity: `${annualCompressorKwh.toLocaleString()} kWh/yr`,
+            factor: `${activeGridEf.toFixed(3)} kg CO₂e/kWh`,
+            source: 'Grid Emission Factor (Electricity Input Only)',
+            boundary: `Shared ÷ ${validResidents} residents`,
+            emissionsTco2e: (householdHeatingKg * allocationShare) / 1000,
+          });
+        }
+      } else if (heatingType === 'fuel') {
+        const annualFuelQty = Math.max(0, Number(heatingFuelQtyMonth)) * 12;
+        const fuelEf =
+          heatingFuelType === 'gas' ? 2.02 : heatingFuelType === 'oil' ? 2.54 : 0.039;
+        const fuelUnit = heatingFuelType === 'gas' ? 'm³' : heatingFuelType === 'oil' ? 'L' : 'kg';
+        householdHeatingKg = annualFuelQty * fuelEf;
+        if (annualFuelQty > 0) {
+          provenanceList.push({
+            domain: 'Home Energy',
+            activity: `Heating Fuel (${heatingFuelType.toUpperCase()})`,
+            quantity: `${annualFuelQty.toLocaleString()} ${fuelUnit}/yr`,
+            factor: `${fuelEf.toFixed(3)} kg CO₂e/${fuelUnit}`,
+            source: 'IPCC Guidelines for National GHG Inventories Vol 2',
+            boundary: `Shared ÷ ${validResidents} residents`,
+            emissionsTco2e: (householdHeatingKg * allocationShare) / 1000,
+          });
+        }
+      }
+    }
+    const personalHeatingTco2e = (householdHeatingKg * allocationShare) / 1000;
+
+    // -----------------------------------------------------------------------
+    // 3. Cooking Energy (Shared)
+    // -----------------------------------------------------------------------
     let householdCookingKg = 0;
     if (cookingFuel === 'lpg') {
-      const monthlyLpgKg = useExactLpgKg ? Number(exactLpgKgMonth) : Number(lpgCylinders) * 14.2;
-      householdCookingKg = monthlyLpgKg * 12 * 2.983; // IPCC 2.983 kg CO2e/kg LPG
+      const monthlyLpgKg = useExactLpgKg
+        ? Math.max(0, Number(exactLpgKgMonth))
+        : Math.max(0, Number(lpgCylindersMonth)) * 14.2;
+      const annualLpgKg = monthlyLpgKg * 12;
+      householdCookingKg = annualLpgKg * 2.983; // 2.983 kg CO2e / kg LPG
+      if (annualLpgKg > 0) {
+        provenanceList.push({
+          domain: 'Home Energy',
+          activity: 'LPG Cooking Cylinders',
+          quantity: `${annualLpgKg.toFixed(1)} kg/yr`,
+          factor: '2.983 kg CO₂e/kg',
+          source: 'IPCC AR6 Working Group III / MoPNG',
+          boundary: `Shared ÷ ${validResidents} residents`,
+          emissionsTco2e: (householdCookingKg * allocationShare) / 1000,
+        });
+      }
     } else if (cookingFuel === 'png') {
-      householdCookingKg = Number(pngM3Month) * 12 * 2.020; // Piped Natural Gas: 2.020 kg CO2e/m3
+      const annualPngM3 = Math.max(0, Number(pngM3Month)) * 12;
+      householdCookingKg = annualPngM3 * 2.02; // 2.020 kg CO2e / m3 PNG
+      if (annualPngM3 > 0) {
+        provenanceList.push({
+          domain: 'Home Energy',
+          activity: 'Piped Natural Gas (PNG) Cooking',
+          quantity: `${annualPngM3.toLocaleString()} m³/yr`,
+          factor: '2.020 kg CO₂e/m³',
+          source: 'DEFRA / UK DESNZ 2023 & IPCC Vol 2',
+          boundary: `Shared ÷ ${validResidents} residents`,
+          emissionsTco2e: (householdCookingKg * allocationShare) / 1000,
+        });
+      }
     } else if (cookingFuel === 'biogas') {
-      householdCookingKg = 0; // Biogenic carbon neutral per IPCC guidelines
-    } else {
-      // Electric Induction
-      householdCookingKg = 0; // Counted under electricity kWh to prevent double counting
+      householdCookingKg = 0; // Biogenic neutral per IPCC
+      if (Number(biogasM3Month) > 0) {
+        provenanceList.push({
+          domain: 'Home Energy',
+          activity: 'Biogas (Anaerobic Digester)',
+          quantity: `${(Number(biogasM3Month) * 12).toLocaleString()} m³/yr`,
+          factor: '0.000 kg CO₂e/m³ (Biogenic Neutral)',
+          source: 'IPCC AR6 Chapter 5 (Biogenic Carbon Cycle)',
+          boundary: `Shared ÷ ${validResidents} residents`,
+          emissionsTco2e: 0,
+        });
+      }
+    } else if (cookingFuel === 'electric_induction') {
+      householdCookingKg = 0; // Captured in electricity
     }
-    const personalCookingTco2e = (householdCookingKg / validResidents) / 1000;
+    const personalCookingTco2e = (householdCookingKg * allocationShare) / 1000;
 
-    // 3. Opt-In Domestic Water & Municipal Solid Waste
+    // -----------------------------------------------------------------------
+    // 4. Opt-In Domestic Water & Municipal Solid Waste (Shared)
+    // -----------------------------------------------------------------------
     let householdWaterKg = 0;
     let householdWasteKg = 0;
     let personalWaterWasteTco2e = 0;
     if (includeWaterWaste) {
-      const annualWaterM3 = Number(waterM3Month) * 12;
-      householdWaterKg = annualWaterM3 * (0.344 + 0.708); // Supply + Aerobic digestion
-      const annualWasteKg = Number(wasteKgWeek) * 52;
-      householdWasteKg = annualWasteKg * 0.586; // Landfill methane factor
-      personalWaterWasteTco2e = ((householdWaterKg + householdWasteKg) / validResidents) / 1000;
+      const annualWaterM3 = Math.max(0, Number(waterM3Month)) * 12;
+      householdWaterKg = annualWaterM3 * (0.344 + 0.708); // Supply + Aerobic wastewater treatment = 1.052
+      const annualWasteKg = Math.max(0, Number(wasteKgWeek)) * 52;
+      householdWasteKg = annualWasteKg * 0.586; // Landfill methane per IPCC AR6
+      personalWaterWasteTco2e = ((householdWaterKg + householdWasteKg) * allocationShare) / 1000;
+
+      if (annualWaterM3 > 0) {
+        provenanceList.push({
+          domain: 'Municipal Utilities',
+          activity: 'Tap Water Supply & Sewage Treatment',
+          quantity: `${annualWaterM3.toLocaleString()} m³/yr`,
+          factor: '1.052 kg CO₂e/m³ (0.344 supply + 0.708 wastewater)',
+          source: 'UK DESNZ 2023 Water Infrastructure Assessment',
+          boundary: `Shared ÷ ${validResidents} residents`,
+          emissionsTco2e: (householdWaterKg * allocationShare) / 1000,
+        });
+      }
+      if (annualWasteKg > 0) {
+        provenanceList.push({
+          domain: 'Municipal Utilities',
+          activity: 'Municipal Solid Waste (Landfill Methane)',
+          quantity: `${annualWasteKg.toLocaleString()} kg/yr`,
+          factor: '0.586 kg CO₂e/kg waste',
+          source: 'IPCC Waste Model AR6 GWP100',
+          boundary: `Shared ÷ ${validResidents} residents`,
+          emissionsTco2e: (householdWasteKg * allocationShare) / 1000,
+        });
+      }
     }
 
-    // 4. Multi-Leg Commute (Separated Transit Modes & Strict XOR)
+    // -----------------------------------------------------------------------
+    // 5. Road & Public Transport (100% Personal)
+    // -----------------------------------------------------------------------
     let totalTransportKg = 0;
     commuteLegs.forEach((leg) => {
-      const annualKm = Number(leg.weeklyKm) * 52;
+      const annualKm = Math.max(0, Number(leg.weeklyKm)) * 52;
+      const occupancyDivider = Math.max(1, Number(leg.occupancy) || 1);
+
       if (leg.mode === 'bicycle_walk') {
-        totalTransportKg += 0;
+        // Zero
       } else if (leg.mode === 'metro_rail') {
-        totalTransportKg += annualKm * 0.035; // 0.035 kg CO2e/pkm
-      } else if (leg.mode === 'commuter_train') {
-        totalTransportKg += annualKm * 0.041; // 0.041 kg CO2e/pkm
-      } else if (leg.mode === 'public_bus') {
-        totalTransportKg += annualKm * 0.089; // 0.089 kg CO2e/pkm
-      } else if (leg.mode === 'ev') {
-        totalTransportKg += annualKm * Number(leg.efficiency) * activeGridEf;
-      } else if (leg.mode === 'two_wheeler') {
-        if (leg.method === 'fuel_receipt') {
-          totalTransportKg += Number(leg.fuelLitersMonth) * 12 * 2.315;
-        } else {
-          totalTransportKg += (annualKm * (Number(leg.efficiency) / 100)) * 2.315;
+        const legKg = annualKm * 0.035;
+        totalTransportKg += legKg;
+        if (annualKm > 0) {
+          provenanceList.push({
+            domain: 'Transport',
+            activity: `Public Metro / Urban Rail (${leg.name})`,
+            quantity: `${annualKm.toLocaleString()} pkm/yr`,
+            factor: '0.035 kg CO₂e/pkm',
+            source: 'KTH Transport Model & UK DESNZ 2023',
+            boundary: '100% Personal',
+            emissionsTco2e: legKg / 1000,
+          });
         }
-      } else if (leg.mode === 'petrol_car') {
+      } else if (leg.mode === 'commuter_train') {
+        const legKg = annualKm * 0.041;
+        totalTransportKg += legKg;
+        if (annualKm > 0) {
+          provenanceList.push({
+            domain: 'Transport',
+            activity: `Commuter / Intercity Train (${leg.name})`,
+            quantity: `${annualKm.toLocaleString()} pkm/yr`,
+            factor: '0.041 kg CO₂e/pkm',
+            source: 'UIC / UK DESNZ Rail Transport 2023',
+            boundary: '100% Personal',
+            emissionsTco2e: legKg / 1000,
+          });
+        }
+      } else if (leg.mode === 'public_bus') {
+        const legKg = annualKm * 0.089;
+        totalTransportKg += legKg;
+        if (annualKm > 0) {
+          provenanceList.push({
+            domain: 'Transport',
+            activity: `Public Transit Bus (${leg.name})`,
+            quantity: `${annualKm.toLocaleString()} pkm/yr`,
+            factor: '0.089 kg CO₂e/pkm',
+            source: 'ARPAN / UK DESNZ Local Bus 2023',
+            boundary: '100% Personal',
+            emissionsTco2e: legKg / 1000,
+          });
+        }
+      } else if (leg.mode === 'ev') {
+        const legKwh = annualKm * Math.max(0, Number(leg.efficiency));
+        const legKg = legKwh * activeGridEf;
+        totalTransportKg += legKg;
+        if (annualKm > 0) {
+          provenanceList.push({
+            domain: 'Transport',
+            activity: `Electric Vehicle (${leg.name})`,
+            quantity: `${annualKm.toLocaleString()} km/yr (${legKwh.toFixed(1)} kWh charging)`,
+            factor: `${activeGridEf.toFixed(3)} kg CO₂e/kWh @ ${leg.efficiency} kWh/km`,
+            source: 'Grid Emission Factor × Battery Powertrain Draw',
+            boundary: '100% Personal',
+            emissionsTco2e: legKg / 1000,
+          });
+        }
+      } else if (leg.mode === 'two_wheeler' || leg.mode === 'petrol_car') {
+        const fuelEf = 2.315; // kg CO2e / L Petrol
+        let legKg = 0;
+        let qtyLabel = '';
         if (leg.method === 'fuel_receipt') {
-          totalTransportKg += Number(leg.fuelLitersMonth) * 12 * 2.315;
+          const annualLiters = Math.max(0, Number(leg.fuelLitersMonth)) * 12;
+          legKg = (annualLiters * fuelEf) / occupancyDivider;
+          qtyLabel = `${annualLiters.toLocaleString()} L petrol/yr`;
         } else {
-          totalTransportKg += (annualKm * (Number(leg.efficiency) / 100)) * 2.315;
+          const litersUsed = annualKm * (Math.max(0, Number(leg.efficiency)) / 100);
+          legKg = (litersUsed * fuelEf) / occupancyDivider;
+          qtyLabel = `${annualKm.toLocaleString()} km/yr (${litersUsed.toFixed(1)} L @ ${leg.efficiency} L/100km)`;
+        }
+        totalTransportKg += legKg;
+        if (legKg > 0) {
+          provenanceList.push({
+            domain: 'Transport',
+            activity: `${leg.mode === 'two_wheeler' ? 'Motorcycle/Scooter' : 'Petrol Automobile'} (${leg.method === 'fuel_receipt' ? 'Fuel Receipts' : 'Distance'})`,
+            quantity: qtyLabel,
+            factor: '2.315 kg CO₂e/L',
+            source: 'IPCC AR6 Chapter 10 Transport / EPA AP-42',
+            boundary: occupancyDivider > 1 ? `Personal (Carpooled ÷ ${occupancyDivider})` : '100% Personal',
+            emissionsTco2e: legKg / 1000,
+          });
         }
       } else if (leg.mode === 'diesel_car') {
+        const fuelEf = 2.687; // kg CO2e / L Diesel
+        let legKg = 0;
+        let qtyLabel = '';
         if (leg.method === 'fuel_receipt') {
-          totalTransportKg += Number(leg.fuelLitersMonth) * 12 * 2.687;
+          const annualLiters = Math.max(0, Number(leg.fuelLitersMonth)) * 12;
+          legKg = (annualLiters * fuelEf) / occupancyDivider;
+          qtyLabel = `${annualLiters.toLocaleString()} L diesel/yr`;
         } else {
-          totalTransportKg += (annualKm * (Number(leg.efficiency) / 100)) * 2.687;
+          const litersUsed = annualKm * (Math.max(0, Number(leg.efficiency)) / 100);
+          legKg = (litersUsed * fuelEf) / occupancyDivider;
+          qtyLabel = `${annualKm.toLocaleString()} km/yr (${litersUsed.toFixed(1)} L @ ${leg.efficiency} L/100km)`;
+        }
+        totalTransportKg += legKg;
+        if (legKg > 0) {
+          provenanceList.push({
+            domain: 'Transport',
+            activity: `Diesel Automobile (${leg.method === 'fuel_receipt' ? 'Fuel Receipts' : 'Distance'})`,
+            quantity: qtyLabel,
+            factor: '2.687 kg CO₂e/L',
+            source: 'IPCC AR6 Chapter 10 Transport',
+            boundary: occupancyDivider > 1 ? `Personal (Carpooled ÷ ${occupancyDivider})` : '100% Personal',
+            emissionsTco2e: legKg / 1000,
+          });
         }
       }
     });
     const personalTransportTco2e = totalTransportKg / 1000;
 
-    // 5. Aviation (Distance, Cabin Class & High-Altitude Radiative Forcing)
+    // -----------------------------------------------------------------------
+    // 6. Aviation (100% Personal)
+    // -----------------------------------------------------------------------
     let flightKmTotal = 0;
     if (aviationMode === 'exact_km') {
-      flightKmTotal = Number(exactFlightKmYear);
+      flightKmTotal = Math.max(0, Number(exactFlightKmYear));
     } else {
-      flightKmTotal = Number(shortHaulFlights) * 1200 + Number(longHaulFlights) * 7000;
+      flightKmTotal =
+        Math.max(0, Number(shortHaulFlights)) * 1200 + Math.max(0, Number(longHaulFlights)) * 7000;
     }
-    const cabinMultiplier = cabinClass === 'business' ? 2.0 : 1.0;
-    const baseDirectFlightKg = flightKmTotal * 0.115 * cabinMultiplier; // ICAO / DEFRA base direct CO2
+
+    const routeClassEf =
+      flightRouteClass === 'short_econ'
+        ? 0.115
+        : flightRouteClass === 'long_econ'
+        ? 0.102
+        : flightRouteClass === 'business_first'
+        ? 0.295
+        : Math.max(0, Number(customAviationEf));
+
+    const baseDirectFlightKg = flightKmTotal * routeClassEf;
     const directFlightTco2e = baseDirectFlightKg / 1000;
-    const radiativeForcingMultiplier = includeRadiativeForcing ? 1.9 : 1.0;
-    const personalAviationTco2e = (baseDirectFlightKg * radiativeForcingMultiplier) / 1000;
+    const radiativeMultiplier = includeRadiativeForcing ? 1.9 : 1.0;
+    const personalAviationTco2e = (baseDirectFlightKg * radiativeMultiplier) / 1000;
 
-    // 6. Optional Lifestyle Add-ons (Diet & Consumption Goods)
-    let dietTco2e = 0;
-    let goodsTco2e = 0;
-    if (showLifestyle) {
-      const dietFactors = {
-        vegan: 1020,
-        vegetarian: 1460,
-        mixed: 2050,
-        high_meat: 3100,
-      };
-      dietTco2e = dietFactors[dietProfile] / 1000;
+    if (flightKmTotal > 0) {
+      provenanceList.push({
+        domain: 'Aviation',
+        activity: `Commercial Passenger Aviation (${flightRouteClass.replace('_', ' ').toUpperCase()})`,
+        quantity: `${flightKmTotal.toLocaleString()} pkm/yr`,
+        factor: `${routeClassEf.toFixed(3)} kg CO₂e/pkm ${includeRadiativeForcing ? '× 1.90 RF factor' : ''}`,
+        source: 'ICAO Carbon Emissions Calculator & UK DESNZ 2023',
+        boundary: '100% Personal (Direct + Optional Cirrus Forcing)',
+        emissionsTco2e: personalAviationTco2e,
+      });
+    }
 
-      if (goodsSpendAnnual > 0) {
-        const spendUsd = spendCurrency === 'INR' ? Number(goodsSpendAnnual) / 85 : Number(goodsSpendAnnual);
-        goodsTco2e = (spendUsd * 0.280) / 1000; // USEEIO consumer goods factor 0.280 kg/$
+    // -----------------------------------------------------------------------
+    // 7. Food & Diet (100% Personal — Opt-In, Default 0)
+    // -----------------------------------------------------------------------
+    let personalFoodTco2e = 0;
+    if (includeFood) {
+      const annualBeefKg = Math.max(0, Number(beefLambKgMonth)) * 12;
+      const annualPorkKg = Math.max(0, Number(porkPoultryKgMonth)) * 12;
+      const annualDairyKg = Math.max(0, Number(dairyCheeseKgMonth)) * 12;
+      const annualPlantKg = Math.max(0, Number(plantGrainsKgMonth)) * 12;
+
+      const beefKgCo2e = annualBeefKg * 27.0; // Poore & Nemecek 2018 / IPCC AR6
+      const porkKgCo2e = annualPorkKg * 6.9;
+      const dairyKgCo2e = annualDairyKg * 8.5;
+      const plantKgCo2e = annualPlantKg * 1.5;
+
+      const totalFoodKgCo2e = beefKgCo2e + porkKgCo2e + dairyKgCo2e + plantKgCo2e;
+      personalFoodTco2e = totalFoodKgCo2e / 1000;
+
+      if (totalFoodKgCo2e > 0) {
+        provenanceList.push({
+          domain: 'Diet & Nutrition',
+          activity: 'Direct Dietary Intake (Mass-Based)',
+          quantity: `${(annualBeefKg + annualPorkKg + annualDairyKg + annualPlantKg).toFixed(1)} kg food/yr`,
+          factor: 'Weighted category LCA (Beef 27.0, Poultry 6.9, Dairy 8.5, Plant 1.5 kg/kg)',
+          source: 'Poore & Nemecek (Science 2018) / IPCC AR6 AFOLU',
+          boundary: '100% Personal',
+          emissionsTco2e: personalFoodTco2e,
+        });
       }
     }
 
-    // Totals
+    // -----------------------------------------------------------------------
+    // 8. Goods & Services (100% Personal — Opt-In, Default 0)
+    // -----------------------------------------------------------------------
+    let personalGoodsTco2e = 0;
+    if (includeGoods) {
+      if (goodsMode === 'lifecycle_qty') {
+        const smartphonesKg = Math.max(0, Number(smartphonesQtyYear)) * 70.0;
+        const laptopsKg = Math.max(0, Number(laptopsQtyYear)) * 250.0;
+        const clothingKg = Math.max(0, Number(clothingItemsYear)) * 15.0;
+        const footwearKg = Math.max(0, Number(footwearPairsYear)) * 18.0;
+        const totalGoodsKg = smartphonesKg + laptopsKg + clothingKg + footwearKg;
+        personalGoodsTco2e = totalGoodsKg / 1000;
+
+        if (totalGoodsKg > 0) {
+          provenanceList.push({
+            domain: 'Manufactured Goods',
+            activity: 'Durable Electronics & Apparel Acquisition (LCA Qty)',
+            quantity: `${smartphonesQtyYear} phones, ${laptopsQtyYear} laptops, ${clothingItemsYear} apparel items`,
+            factor: 'LCA Item Factors (Phone 70kg, PC 250kg, Garment 15kg)',
+            source: 'Apple / Dell Product Environmental Reports & WRAP UK LCA',
+            boundary: '100% Personal',
+            emissionsTco2e: personalGoodsTco2e,
+          });
+        }
+      } else {
+        // Spend-based fallback
+        const rateToUsd =
+          spendCurrency === 'INR'
+            ? 0.0118
+            : spendCurrency === 'EUR'
+            ? 1.08
+            : spendCurrency === 'GBP'
+            ? 1.28
+            : 1.0;
+        const spendUsd = Math.max(0, Number(spendAmount)) * rateToUsd;
+        const sectorEf =
+          spendSector === 'electronics'
+            ? 0.32
+            : spendSector === 'clothing'
+            ? 0.45
+            : spendSector === 'services'
+            ? 0.18
+            : 0.38;
+        const goodsKg = spendUsd * sectorEf;
+        personalGoodsTco2e = goodsKg / 1000;
+
+        if (goodsKg > 0) {
+          provenanceList.push({
+            domain: 'Consumer Goods',
+            activity: `Discretionary Spend (${spendSector.toUpperCase()}, ${spendCurrency})`,
+            quantity: `${spendCurrency} ${Number(spendAmount).toLocaleString()} ($${spendUsd.toFixed(0)} USD)`,
+            factor: `${sectorEf.toFixed(3)} kg CO₂e / USD (2024 price basis)`,
+            source: 'US EPA USEEIO v2.0.1 (2024)',
+            boundary: '100% Personal',
+            emissionsTco2e: personalGoodsTco2e,
+          });
+        }
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Totals & Allocation Synthesis
+    // -----------------------------------------------------------------------
     const totalPersonalTco2e =
       personalElecTco2e +
+      personalHeatingTco2e +
       personalCookingTco2e +
       personalWaterWasteTco2e +
       personalTransportTco2e +
       personalAviationTco2e +
-      dietTco2e +
-      goodsTco2e;
+      personalFoodTco2e +
+      personalGoodsTco2e;
 
-    // Gross Household Total (Before resident division)
     const totalHouseholdGrossTco2e =
-      (householdElecKg + householdCookingKg + householdWaterKg + householdWasteKg) / 1000 +
+      (householdElecKg +
+        householdHeatingKg +
+        householdCookingKg +
+        householdWaterKg +
+        householdWasteKg) /
+        1000 +
       personalTransportTco2e * validResidents +
-      personalAviationTco2e * validResidents;
+      personalAviationTco2e * validResidents +
+      personalFoodTco2e * validResidents +
+      personalGoodsTco2e * validResidents;
 
     const creditsNeeded = Math.ceil(totalPersonalTco2e);
 
-    // Benchmarks
     const nationalAverage =
-      gridKey === 'india_cea' ? 1.9 : gridKey === 'us_egrid' ? 14.9 : gridKey === 'uk_desnz' ? 5.2 : 6.8;
-    const pctOfAverage = Math.round((totalPersonalTco2e / nationalAverage) * 100);
+      gridKey === 'india_cea'
+        ? 1.9
+        : gridKey === 'us_egrid'
+        ? 14.9
+        : gridKey === 'uk_desnz'
+        ? 5.2
+        : 6.8;
+    const pctOfAverage = nationalAverage > 0 ? Math.round((totalPersonalTco2e / nationalAverage) * 100) : 0;
 
     return {
+      validResidents,
+      allocationShare,
       personalElecTco2e,
+      personalHeatingTco2e,
       personalCookingTco2e,
       personalWaterWasteTco2e,
       personalTransportTco2e,
       personalAviationTco2e,
       directFlightTco2e,
-      dietTco2e,
-      goodsTco2e,
+      personalFoodTco2e,
+      personalGoodsTco2e,
       totalPersonalTco2e,
       totalHouseholdGrossTco2e,
       creditsNeeded,
       nationalAverage,
       pctOfAverage,
-      validResidents,
+      provenanceList,
     };
   }, [
     residents,
     electricityKwh,
     activeGridEf,
+    useCustomGridFactor,
+    gridPreset,
+    includeHeating,
+    heatingType,
+    districtHeatKwhMonth,
+    districtHeatEf,
+    heatPumpKwhMonth,
+    heatingFuelType,
+    heatingFuelQtyMonth,
     cookingFuel,
     useExactLpgKg,
     exactLpgKgMonth,
-    lpgCylinders,
+    lpgCylindersMonth,
     pngM3Month,
     biogasM3Month,
     includeWaterWaste,
@@ -313,16 +853,27 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
     exactFlightKmYear,
     shortHaulFlights,
     longHaulFlights,
-    cabinClass,
+    flightRouteClass,
+    customAviationEf,
     includeRadiativeForcing,
-    showLifestyle,
-    dietProfile,
-    goodsSpendAnnual,
+    includeFood,
+    beefLambKgMonth,
+    porkPoultryKgMonth,
+    dairyCheeseKgMonth,
+    plantGrainsKgMonth,
+    includeGoods,
+    goodsMode,
+    smartphonesQtyYear,
+    laptopsQtyYear,
+    clothingItemsYear,
+    footwearPairsYear,
+    spendAmount,
     spendCurrency,
+    spendSector,
     gridKey,
   ]);
 
-  // Handle live quote preview
+  // Retirement Flow Action
   const handleGetRetirementQuote = async () => {
     setIsRetiring(true);
     try {
@@ -330,7 +881,7 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tco2e: footprint.totalPersonalTco2e,
+          tco2e: calculation.totalPersonalTco2e,
           projectId: selectedProjectId,
           beneficiaryName,
         }),
@@ -347,67 +898,118 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   };
 
   return (
-    <div className="space-y-8 animate-fadeIn pb-16 md:pb-0">
-      {/* Top Banner: Exact Primary Data & KTH Rules */}
+    <div className="space-y-8 animate-fadeIn pb-20 md:pb-0 w-full max-w-full overflow-x-hidden">
+      {/* ============================================================== */}
+      {/* TOP BANNER: KTH BOUNDARY RULES & ZERO FORCED DEFAULTS */}
+      {/* ============================================================== */}
       <div className="bg-emerald-950 text-white rounded-2xl p-4 sm:p-6 shadow-xs border border-emerald-800/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-300">
-              KTH Boundary Rules · Full Double-Precision Math
+              KTH Lifecycle Precision Engine · Zero Forced Defaults
             </span>
           </div>
           <h2 className="text-lg sm:text-xl font-bold tracking-tight text-white">
             Personal &amp; Household Carbon Assessment
           </h2>
-          <p className="text-xs text-emerald-200/80 max-w-2xl mt-0.5">
-            Combines fast estimate sliders with multi-fuel cooking, multi-leg transit modes, household resident allocation,
-            and opt-in municipal utility metrics.
+          <p className="text-xs text-emerald-200/80 max-w-2xl mt-0.5 leading-relaxed">
+            Every category defaults to zero until entered. Strictly isolates shared household utilities (divided by residents) from 100% personal transit, flights, food, and consumption goods.
           </p>
         </div>
 
-        {/* Household Residents Control */}
-        <div className="bg-emerald-900/90 border border-emerald-700/80 rounded-xl p-3 flex items-center gap-3 shrink-0">
-          <Users className="w-5 h-5 text-emerald-300" />
-          <div>
-            <label htmlFor="household-residents" className="text-[11px] font-bold text-emerald-200 block">
-              Residents in Household
-            </label>
-            <div className="flex items-center gap-2 mt-0.5">
-              <input
-                id="household-residents"
-                type="number"
-                min={1}
-                max={20}
-                value={residents}
-                onChange={(e) => setResidents(Math.max(1, Number(e.target.value) || 1))}
-                className="w-16 bg-white text-zinc-950 font-mono font-bold text-sm px-2 py-1 rounded border border-emerald-300 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-              />
-              <span className="text-[10px] text-emerald-300 font-mono">
-                Divides shared utilities
-              </span>
-            </div>
-          </div>
+        {/* Quick Archetype Loaders */}
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
+          <span className="text-[11px] font-mono text-emerald-300/80 mr-1 hidden sm:inline">Presets:</span>
+          <button
+            type="button"
+            onClick={() => applyPreset('zero')}
+            className="px-2.5 py-1.5 rounded-lg bg-emerald-900/80 hover:bg-emerald-800 text-[11px] font-mono font-bold text-white border border-emerald-700/60 transition flex items-center gap-1"
+            title="Reset all fields to exact 0"
+          >
+            <RotateCcw className="w-3 h-3 text-emerald-400" />
+            <span>Zero Baseline</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => applyPreset('urban_professional')}
+            className="px-2.5 py-1.5 rounded-lg bg-emerald-800/80 hover:bg-emerald-700 text-[11px] font-mono font-bold text-emerald-100 border border-emerald-600/60 transition"
+          >
+            Urban Pro
+          </button>
+          <button
+            type="button"
+            onClick={() => applyPreset('rural_homestead')}
+            className="px-2.5 py-1.5 rounded-lg bg-emerald-800/80 hover:bg-emerald-700 text-[11px] font-mono font-bold text-emerald-100 border border-emerald-600/60 transition"
+          >
+            Homestead
+          </button>
         </div>
       </div>
 
-      {/* Main Grid: Inputs on Left, Results on Right */}
+      {/* ============================================================== */}
+      {/* 2-COLUMN MAIN WORKSPACE */}
+      {/* ============================================================== */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Input Categories */}
+        {/* Left Column: All 8 KTH Modules */}
         <div className="lg:col-span-7 space-y-6">
-          {/* Card 1: Home Utilities (Electricity & Multi-Fuel Cooking) */}
-          <div className="bg-white rounded-2xl border border-zinc-200/90 p-5 sm:p-6 shadow-sm space-y-5">
+          {/* ========================================================== */}
+          {/* MODULE 1: SHARED HOUSEHOLD ALLOCATION */}
+          {/* ========================================================== */}
+          <div className="bg-white rounded-2xl border border-zinc-200/90 p-5 sm:p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-emerald-100 text-emerald-800 rounded-lg">
+                  <Users className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-zinc-900">
+                  1. Shared Household Allocation
+                </h3>
+              </div>
+              <span className="text-[11px] font-mono text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
+                Allocation Share: {(calculation.allocationShare * 100).toFixed(1)}%
+              </span>
+            </div>
+
+            <div className="bg-zinc-50 rounded-xl p-3.5 border border-zinc-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <label htmlFor="household-residents" className="text-xs font-bold text-zinc-800 block">
+                  Number of Household Residents
+                </label>
+                <p className="text-[11px] text-zinc-500 mt-0.5">
+                  Applies <code className="text-emerald-700 font-mono font-bold">1 ÷ residents</code> strictly to shared utilities (Electricity, Heating, Cooking, Water, Municipal Waste).
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <input
+                  id="household-residents"
+                  type="number"
+                  min={1}
+                  max={25}
+                  value={residents}
+                  onChange={(e) => setResidents(Math.max(1, Number(e.target.value) || 1))}
+                  className="w-16 bg-white border border-zinc-300 rounded-lg px-2.5 py-1.5 font-mono font-bold text-sm text-center text-zinc-900 focus:outline-none focus:ring-1 focus:ring-emerald-700"
+                />
+                <span className="text-xs font-medium text-zinc-600">people</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ========================================================== */}
+          {/* MODULE 2: HOME ENERGY (ELECTRICITY, HEATING & COOKING) */}
+          {/* ========================================================== */}
+          <div className="bg-white rounded-2xl border border-zinc-200/90 p-5 sm:p-6 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-100 pb-3">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 bg-amber-100 text-amber-800 rounded-lg">
                   <Zap className="w-4 h-4" />
                 </div>
                 <h3 className="text-base font-bold text-zinc-900">
-                  1. Electricity &amp; Multi-Fuel Cooking
+                  2. Home Energy (Electricity, Heating &amp; Cooking)
                 </h3>
               </div>
 
-              {/* Grid Preset Selector */}
+              {/* Grid Preset Dropdown */}
               <div className="flex items-center gap-1.5 bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-1 text-xs">
                 <Globe className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
                 <select
@@ -423,38 +1025,17 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
               </div>
             </div>
 
-            {/* Custom Grid Factor Override Toggle */}
-            <div className="bg-zinc-50 p-2.5 rounded-lg border border-zinc-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-              <label className="flex items-center gap-2 cursor-pointer text-zinc-700 font-medium">
-                <input
-                  type="checkbox"
-                  checked={useCustomGridFactor}
-                  onChange={(e) => setUseCustomGridFactor(e.target.checked)}
-                  className="rounded text-emerald-700 focus:ring-emerald-700"
-                />
-                <span>Override with Specific Utility Emission Factor</span>
-              </label>
-              {useCustomGridFactor && (
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    value={customGridFactor}
-                    onChange={(e) => setCustomGridFactor(Number(e.target.value))}
-                    className="w-24 bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-xs text-zinc-900 focus:outline-none focus:ring-1 focus:ring-emerald-700"
-                  />
-                  <span className="text-[10px] text-zinc-500 font-mono">kg CO₂e/kWh</span>
+            {/* Sub-item A: Grid Electricity */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-zinc-900 block">
+                    Monthly Electricity Draw
+                  </span>
+                  <span className="text-[11px] text-zinc-500">
+                    Active Grid Factor: <code className="font-mono text-emerald-800 font-bold">{activeGridEf.toFixed(3)} kg CO₂e/kWh</code>
+                  </span>
                 </div>
-              )}
-            </div>
-
-            {/* Electricity Slider & Exact Input */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs sm:text-sm">
-                <span className="font-semibold text-zinc-900">
-                  Monthly Electricity (kWh)
-                </span>
                 <div className="flex items-center gap-1.5">
                   <input
                     type="number"
@@ -462,7 +1043,7 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                     max={5000}
                     value={electricityKwh}
                     onChange={(e) => setElectricityKwh(Math.max(0, Number(e.target.value)))}
-                    className="w-20 bg-zinc-100 border border-zinc-200 rounded px-2 py-0.5 font-mono font-bold text-xs text-right text-zinc-900 focus:outline-none focus:ring-1 focus:ring-emerald-700"
+                    className="w-20 bg-zinc-100 border border-zinc-200 rounded px-2 py-1 font-mono font-bold text-xs text-right text-zinc-900 focus:outline-none focus:ring-1 focus:ring-emerald-700"
                   />
                   <span className="text-xs font-mono text-zinc-500">kWh/mo</span>
                 </div>
@@ -478,103 +1059,309 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
               />
               <div className="flex justify-between text-[10px] text-zinc-400 font-mono">
                 <span>0 kWh</span>
-                <span>300 kWh (Standard Family)</span>
-                <span>1500 kWh (Heavy AC)</span>
+                <span>500 kWh</span>
+                <span>1000 kWh</span>
+                <span>1500 kWh</span>
+              </div>
+
+              {/* Custom Grid Factor Toggle */}
+              <div className="pt-1">
+                <label className="flex items-center gap-2 cursor-pointer text-[11px] text-zinc-600">
+                  <input
+                    type="checkbox"
+                    checked={useCustomGridFactor}
+                    onChange={(e) => setUseCustomGridFactor(e.target.checked)}
+                    className="rounded text-emerald-700 focus:ring-emerald-700"
+                  />
+                  <span>Override with specific utility supplier emission factor</span>
+                </label>
+                {useCustomGridFactor && (
+                  <div className="mt-2 flex items-center gap-2 p-2 bg-zinc-50 border border-zinc-200 rounded-lg text-xs">
+                    <span className="text-zinc-600">Custom Factor:</span>
+                    <input
+                      type="number"
+                      step={0.001}
+                      min={0}
+                      value={customGridFactor}
+                      onChange={(e) => setCustomGridFactor(Number(e.target.value))}
+                      className="w-24 bg-white border border-zinc-300 rounded px-2 py-0.5 font-mono text-xs text-right text-zinc-900"
+                    />
+                    <span className="text-zinc-500 font-mono text-[10px]">kg CO₂e/kWh</span>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Multi-Fuel Cooking Energy Selector */}
-            <div className="space-y-3 pt-3 border-t border-zinc-100">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs sm:text-sm">
-                <div className="flex items-center gap-2 font-semibold text-zinc-900">
-                  <Flame className="w-4 h-4 text-orange-500" />
-                  <span>Cooking Energy Fuel Source</span>
-                </div>
-                <select
-                  value={cookingFuel}
-                  onChange={(e) => setCookingFuel(e.target.value as CookingFuelType)}
-                  className="bg-zinc-100 border border-zinc-200 rounded-lg px-2.5 py-1 text-xs font-bold text-zinc-800"
-                >
-                  <option value="lpg">LPG Cylinder (2.983 kg CO₂e/kg)</option>
-                  <option value="png">Piped Natural Gas / PNG (2.020 kg CO₂e/m³)</option>
-                  <option value="biogas">Biogas / Anaerobic Digester (Biogenic 0 kg CO₂e)</option>
-                  <option value="electric_induction">Electric Induction / Stove (0 kg Direct Scope 1)</option>
-                </select>
-              </div>
+            {/* Sub-item B: Home Heating (Optional — Default 0) */}
+            <div className="pt-4 border-t border-zinc-100 space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-zinc-900">
+                <input
+                  type="checkbox"
+                  checked={includeHeating}
+                  onChange={(e) => setIncludeHeating(e.target.checked)}
+                  className="rounded text-emerald-700 focus:ring-emerald-700"
+                />
+                <span>Include Home Space Heating Assessment (Default: None / 0)</span>
+              </label>
 
-              {/* Cooking Input Fields Depending on Fuel */}
-              {cookingFuel === 'lpg' && (
-                <div className="space-y-2 bg-orange-50/40 p-3 rounded-xl border border-orange-200/60">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-700 font-medium">LPG Cylinders (14.2 kg each):</span>
-                    <div className="flex items-center gap-2">
-                      <label className="text-[11px] text-zinc-500 flex items-center gap-1 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={useExactLpgKg}
-                          onChange={(e) => setUseExactLpgKg(e.target.checked)}
-                          className="rounded text-orange-600"
-                        />
-                        <span>Enter exact kg</span>
-                      </label>
-                      {useExactLpgKg ? (
+              {includeHeating && (
+                <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-200 space-y-4 animate-fadeIn text-xs">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className="font-bold text-zinc-800">Heating Technology:</label>
+                    <div className="flex gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setHeatingType('district_heat')}
+                        className={`px-2.5 py-1 rounded text-xs font-medium border ${
+                          heatingType === 'district_heat'
+                            ? 'bg-emerald-700 text-white border-emerald-700'
+                            : 'bg-white text-zinc-700 border-zinc-200'
+                        }`}
+                      >
+                        District Heating
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHeatingType('heat_pump')}
+                        className={`px-2.5 py-1 rounded text-xs font-medium border ${
+                          heatingType === 'heat_pump'
+                            ? 'bg-emerald-700 text-white border-emerald-700'
+                            : 'bg-white text-zinc-700 border-zinc-200'
+                        }`}
+                      >
+                        Heat Pump
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHeatingType('fuel')}
+                        className={`px-2.5 py-1 rounded text-xs font-medium border ${
+                          heatingType === 'fuel'
+                            ? 'bg-emerald-700 text-white border-emerald-700'
+                            : 'bg-white text-zinc-700 border-zinc-200'
+                        }`}
+                      >
+                        Combustion Fuel
+                      </button>
+                    </div>
+                  </div>
+
+                  {heatingType === 'district_heat' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="text-zinc-700 block mb-1">Monthly Heat Delivered (kWh):</label>
                         <input
                           type="number"
                           min={0}
-                          value={exactLpgKgMonth}
-                          onChange={(e) => setExactLpgKgMonth(Number(e.target.value))}
-                          className="w-16 bg-white border border-zinc-200 rounded px-2 py-0.5 font-mono text-xs text-right text-zinc-900"
+                          value={districtHeatKwhMonth}
+                          onChange={(e) => setDistrictHeatKwhMonth(Number(e.target.value))}
+                          className="w-full bg-white border border-zinc-300 rounded px-2.5 py-1.5 font-mono text-zinc-900 text-xs"
+                          placeholder="e.g. 500"
                         />
-                      ) : (
-                        <span className="font-mono font-bold text-zinc-900 text-xs bg-white px-2 py-0.5 rounded border border-orange-200">
-                          {lpgCylinders} cylinder{lpgCylinders !== 1 ? 's' : ''} / mo
-                        </span>
-                      )}
+                      </div>
+                      <div>
+                        <label className="text-zinc-700 block mb-1">District Heat EF (kg CO₂e/kWh):</label>
+                        <input
+                          type="number"
+                          step={0.001}
+                          min={0}
+                          value={districtHeatEf}
+                          onChange={(e) => setDistrictHeatEf(Number(e.target.value))}
+                          className="w-full bg-white border border-zinc-300 rounded px-2.5 py-1.5 font-mono text-zinc-900 text-xs"
+                        />
+                      </div>
                     </div>
+                  )}
+
+                  {heatingType === 'heat_pump' && (
+                    <div className="pt-1 space-y-2">
+                      <label className="text-zinc-700 block">Compressor Electricity Input (kWh/month):</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={heatPumpKwhMonth}
+                        onChange={(e) => setHeatPumpKwhMonth(Number(e.target.value))}
+                        className="w-full sm:w-48 bg-white border border-zinc-300 rounded px-2.5 py-1.5 font-mono text-zinc-900 text-xs"
+                        placeholder="e.g. 200"
+                      />
+                      <p className="text-[11px] text-zinc-500">
+                        ⚡ Per ISO/KTH rules, only electrical energy input is accounted for; extracted aerodynamic/geothermal heat is ambient renewable energy.
+                      </p>
+                    </div>
+                  )}
+
+                  {heatingType === 'fuel' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="text-zinc-700 block mb-1">Fuel Type:</label>
+                        <select
+                          value={heatingFuelType}
+                          onChange={(e) => setHeatingFuelType(e.target.value as any)}
+                          className="w-full bg-white border border-zinc-300 rounded px-2.5 py-1.5 text-zinc-900 text-xs"
+                        >
+                          <option value="gas">Natural Gas (2.02 kg CO₂e/m³)</option>
+                          <option value="oil">Heating Oil (2.54 kg CO₂e/L)</option>
+                          <option value="biomass">Wood Pellets (0.039 kg CO₂e/kg)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-zinc-700 block mb-1">
+                          Monthly Quantity ({heatingFuelType === 'gas' ? 'm³' : heatingFuelType === 'oil' ? 'L' : 'kg'}):
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={heatingFuelQtyMonth}
+                          onChange={(e) => setHeatingFuelQtyMonth(Number(e.target.value))}
+                          className="w-full bg-white border border-zinc-300 rounded px-2.5 py-1.5 font-mono text-zinc-900 text-xs"
+                          placeholder="e.g. 50"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Sub-item C: Cooking Energy (Multi-Fuel Selector) */}
+            <div className="pt-4 border-t border-zinc-100 space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Flame className="w-4 h-4 text-orange-500" />
+                  <span className="text-xs font-bold text-zinc-900">
+                    Cooking Energy (Multi-Fuel Selector)
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 bg-zinc-100 p-0.5 rounded-lg border border-zinc-200">
+                  <button
+                    type="button"
+                    onClick={() => setCookingFuel('none')}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                      cookingFuel === 'none'
+                        ? 'bg-white text-zinc-900 shadow-xs font-bold'
+                        : 'text-zinc-600 hover:text-zinc-900'
+                    }`}
+                  >
+                    None / 0
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCookingFuel('lpg')}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                      cookingFuel === 'lpg'
+                        ? 'bg-white text-zinc-900 shadow-xs font-bold'
+                        : 'text-zinc-600 hover:text-zinc-900'
+                    }`}
+                  >
+                    LPG Cylinder
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCookingFuel('png')}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                      cookingFuel === 'png'
+                        ? 'bg-white text-zinc-900 shadow-xs font-bold'
+                        : 'text-zinc-600 hover:text-zinc-900'
+                    }`}
+                  >
+                    PNG Gas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCookingFuel('biogas')}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                      cookingFuel === 'biogas'
+                        ? 'bg-white text-zinc-900 shadow-xs font-bold'
+                        : 'text-zinc-600 hover:text-zinc-900'
+                    }`}
+                  >
+                    Biogas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCookingFuel('electric_induction')}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                      cookingFuel === 'electric_induction'
+                        ? 'bg-white text-zinc-900 shadow-xs font-bold'
+                        : 'text-zinc-600 hover:text-zinc-900'
+                    }`}
+                  >
+                    Electric
+                  </button>
+                </div>
+              </div>
+
+              {cookingFuel === 'none' && (
+                <p className="text-[11px] text-zinc-400 italic">
+                  Zero cooking fuel emissions recorded.
+                </p>
+              )}
+
+              {cookingFuel === 'lpg' && (
+                <div className="bg-zinc-50 p-3.5 rounded-xl border border-zinc-200 space-y-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-zinc-800 block">LPG Consumption Mode:</span>
+                      <span className="text-[11px] text-zinc-500 font-mono">Factor: 2.983 kg CO₂e / kg LPG</span>
+                    </div>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-zinc-600">
+                      <input
+                        type="checkbox"
+                        checked={useExactLpgKg}
+                        onChange={(e) => setUseExactLpgKg(e.target.checked)}
+                        className="rounded text-emerald-700 focus:ring-emerald-700"
+                      />
+                      <span>Exact kg input</span>
+                    </label>
                   </div>
-                  {!useExactLpgKg && (
-                    <input
-                      type="range"
-                      min={0}
-                      max={4}
-                      step={0.5}
-                      value={lpgCylinders}
-                      onChange={(e) => setLpgCylinders(Number(e.target.value))}
-                      className="w-full h-2 bg-orange-200 rounded-lg appearance-none cursor-pointer accent-orange-600"
-                    />
+
+                  {useExactLpgKg ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        value={exactLpgKgMonth}
+                        onChange={(e) => setExactLpgKgMonth(Number(e.target.value))}
+                        className="w-24 bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                      />
+                      <span className="text-zinc-600 font-mono">kg LPG / month</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between font-mono text-xs">
+                        <span className="text-zinc-700">Standard 14.2 kg Cylinders:</span>
+                        <span className="font-bold text-zinc-900">{lpgCylindersMonth} cylinders/mo</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={4}
+                        step={0.5}
+                        value={lpgCylindersMonth}
+                        onChange={(e) => setLpgCylindersMonth(Number(e.target.value))}
+                        className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                      />
+                    </div>
                   )}
                 </div>
               )}
 
               {cookingFuel === 'png' && (
-                <div className="space-y-2 bg-zinc-50 p-3 rounded-xl border border-zinc-200">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-700 font-medium">Monthly Piped Natural Gas (m³):</span>
+                <div className="bg-zinc-50 p-3.5 rounded-xl border border-zinc-200 space-y-2 text-xs">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="font-bold text-zinc-800 block">Piped Natural Gas (PNG):</span>
+                      <span className="text-[11px] text-zinc-500 font-mono">Factor: 2.020 kg CO₂e / m³</span>
+                    </div>
                     <div className="flex items-center gap-1.5">
                       <input
                         type="number"
                         min={0}
-                        max={100}
                         value={pngM3Month}
-                        onChange={(e) => setPngM3Month(Math.max(0, Number(e.target.value)))}
-                        className="w-20 bg-white border border-zinc-200 rounded px-2 py-0.5 font-mono font-bold text-xs text-right text-zinc-900"
+                        onChange={(e) => setPngM3Month(Number(e.target.value))}
+                        className="w-20 bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs text-right"
                       />
-                      <span className="text-xs font-mono text-zinc-500">m³/mo</span>
+                      <span className="text-zinc-600 font-mono">m³/mo</span>
                     </div>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={50}
-                    step={1}
-                    value={pngM3Month}
-                    onChange={(e) => setPngM3Month(Number(e.target.value))}
-                    className="w-full h-2 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-emerald-700"
-                  />
-                  <div className="flex justify-between text-[10px] text-zinc-400 font-mono">
-                    <span>0 m³</span>
-                    <span>15 m³ (Average Indian/EU Household)</span>
-                    <span>50 m³ (Heavy cooking)</span>
                   </div>
                 </div>
               )}
@@ -583,11 +1370,10 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                 <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-xl p-3 text-xs space-y-1">
                   <div className="font-bold text-emerald-900 flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    Biogenic Carbon Neutral (0.000 kg CO₂e / m³)
+                    Biogenic Carbon Neutral (0.000 kg CO₂e/m³)
                   </div>
                   <p className="text-[11px] text-emerald-800 leading-relaxed">
-                    Under IPCC and GHG Protocol guidelines, combustion of biogenic methane from agricultural
-                    or manure anaerobic digesters is closed-loop carbon neutral.
+                    Per IPCC AR6 guidelines, CO₂ released from anaerobic digestion of organic kitchen waste or manure is closed-loop carbon neutral.
                   </p>
                 </div>
               )}
@@ -599,515 +1385,1002 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                     Zero Direct Scope 1 Emissions
                   </div>
                   <p className="text-[11px] text-blue-800 leading-relaxed">
-                    Electric induction cooking energy is accounted for under your monthly electricity consumption (kWh)
-                    above to prevent double-counting.
+                    Electric cooking is already accounted for under your monthly electricity draw (kWh) above to prevent double-counting.
                   </p>
                 </div>
               )}
             </div>
-
-            {/* Opt-In Municipal Water & Solid Waste (Removed silent default) */}
-            <div className="pt-3 border-t border-zinc-100 space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-zinc-900">
-                <input
-                  type="checkbox"
-                  checked={includeWaterWaste}
-                  onChange={(e) => setIncludeWaterWaste(e.target.checked)}
-                  className="rounded text-emerald-700 focus:ring-emerald-700"
-                />
-                <span>Include Municipal Water &amp; Solid Waste (Opt-In Assessment)</span>
-              </label>
-
-              {includeWaterWaste ? (
-                <div className="bg-zinc-50 p-3.5 rounded-xl border border-zinc-200 space-y-3 text-xs">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-zinc-700 flex items-center gap-1 font-medium">
-                          <Droplet className="w-3.5 h-3.5 text-blue-500" />
-                          Water Supply &amp; Sewage:
-                        </span>
-                        <span className="font-mono font-bold text-zinc-900">{waterM3Month} m³/mo</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={40}
-                        step={1}
-                        value={waterM3Month}
-                        onChange={(e) => setWaterM3Month(Number(e.target.value))}
-                        className="w-full h-1.5 bg-blue-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-zinc-700 flex items-center gap-1 font-medium">
-                          <Trash className="w-3.5 h-3.5 text-zinc-500" />
-                          Municipal Solid Waste:
-                        </span>
-                        <span className="font-mono font-bold text-zinc-900">{wasteKgWeek} kg/wk</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={25}
-                        step={1}
-                        value={wasteKgWeek}
-                        onChange={(e) => setWasteKgWeek(Number(e.target.value))}
-                        className="w-full h-1.5 bg-zinc-300 rounded-lg appearance-none cursor-pointer accent-zinc-700"
-                      />
-                    </div>
-                  </div>
-                  <span className="text-[10px] text-zinc-400 font-mono block">
-                    Divided by {footprint.validResidents} {footprint.validResidents === 1 ? 'resident' : 'residents'} per KTH boundary rules.
-                  </span>
-                </div>
-              ) : (
-                <span className="text-[11px] text-zinc-400 block italic">
-                  Water &amp; landfill waste excluded by default to avoid unmetered assumptions. Check above to include.
-                </span>
-              )}
-            </div>
           </div>
 
-          {/* Card 2: Road & Public Transport (Multi-Leg & Separated Transit Modes) */}
+          {/* ========================================================== */}
+          {/* MODULE 3: ROAD & PUBLIC TRANSPORT (MULTI-LEG BUILDER) */}
+          {/* ========================================================== */}
           <div className="bg-white rounded-2xl border border-zinc-200/90 p-5 sm:p-6 shadow-sm space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-100 pb-3">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3 flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 bg-blue-100 text-blue-800 rounded-lg">
                   <Car className="w-4 h-4" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-zinc-900">
-                    2. Multi-Leg Commute &amp; Separated Transit
+                    3. Road &amp; Public Transport
                   </h3>
-                  <span className="text-[10px] font-mono text-emerald-700 font-bold">
-                    COMBINE MULTIPLE LEGS · STRICT MOTORIZED XOR BOUNDARY
+                  <span className="text-[11px] text-zinc-500">
+                    Multi-Leg Commute Builder · Strict Fuel-vs-Distance XOR Boundary
                   </span>
                 </div>
               </div>
-
-              {/* Add Leg Button */}
               <button
                 type="button"
                 onClick={addCommuteLeg}
-                className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-xs font-bold transition border border-emerald-200"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-semibold transition"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>+ Add Commute Leg</span>
+                <span>Add Commute Leg</span>
               </button>
             </div>
 
-            {/* Commute Legs List */}
             <div className="space-y-4">
-              {commuteLegs.map((leg, index) => {
-                const isMotorizedPersonal =
-                  leg.mode === 'two_wheeler' || leg.mode === 'petrol_car' || leg.mode === 'diesel_car';
-
-                return (
-                  <div
-                    key={leg.id}
-                    className="p-4 rounded-xl border border-zinc-200 bg-zinc-50/40 space-y-3 relative group"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-200/60 pb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="w-5 h-5 rounded-full bg-zinc-200 text-zinc-700 flex items-center justify-center font-mono text-[10px] font-bold">
-                          {index + 1}
-                        </span>
-                        <select
-                          value={leg.mode}
-                          onChange={(e) => updateCommuteLeg(leg.id, { mode: e.target.value as TransitMode })}
-                          className="bg-white border border-zinc-200 rounded px-2.5 py-1 text-xs font-bold text-zinc-900 cursor-pointer"
-                        >
-                          <option value="bicycle_walk">Bicycle / Walking (0.000 kg/pkm)</option>
-                          <option value="metro_rail">Metro / Urban Rail (0.035 kg/pkm)</option>
-                          <option value="commuter_train">Commuter / Intercity Train (0.041 kg/pkm)</option>
-                          <option value="public_bus">Public Bus (0.089 kg/pkm)</option>
-                          <option value="ev">Electric Vehicle / EV (kWh/km × Grid)</option>
-                          <option value="two_wheeler">Motorcycle / Scooter (Petrol)</option>
-                          <option value="petrol_car">Petrol Car</option>
-                          <option value="diesel_car">Diesel Car</option>
-                        </select>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {/* Motorized XOR Method Switcher */}
-                        {isMotorizedPersonal && (
-                          <div className="flex items-center p-0.5 bg-zinc-200/70 rounded border border-zinc-300/80 text-[11px]">
-                            <button
-                              type="button"
-                              onClick={() => updateCommuteLeg(leg.id, { method: 'distance' })}
-                              className={`px-2 py-0.5 rounded font-bold transition ${
-                                leg.method === 'distance' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-600'
-                              }`}
-                            >
-                              Distance
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => updateCommuteLeg(leg.id, { method: 'fuel_receipt' })}
-                              className={`px-2 py-0.5 rounded font-bold transition ${
-                                leg.method === 'fuel_receipt' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-600'
-                              }`}
-                            >
-                              Fuel (L)
-                            </button>
-                          </div>
-                        )}
-
-                        {commuteLegs.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeCommuteLeg(leg.id)}
-                            className="p-1 text-zinc-400 hover:text-red-600 transition"
-                            title="Remove this leg"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
+              {commuteLegs.map((leg, idx) => (
+                <div
+                  key={leg.id}
+                  className="bg-zinc-50 p-4 rounded-xl border border-zinc-200/80 space-y-3 text-xs relative"
+                >
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold font-mono text-zinc-800">Leg #{idx + 1}:</span>
+                      <select
+                        value={leg.mode}
+                        onChange={(e) => updateCommuteLeg(leg.id, { mode: e.target.value as TransitMode })}
+                        className="bg-white border border-zinc-300 rounded px-2 py-1 font-medium text-zinc-900 text-xs"
+                      >
+                        <option value="bicycle_walk">🚶 Bicycle / Walk (0.000 kg/km)</option>
+                        <option value="metro_rail">🚇 Metro / Urban Rail (0.035 kg/km)</option>
+                        <option value="commuter_train">🚆 Commuter Train (0.041 kg/km)</option>
+                        <option value="public_bus">🚌 Public Bus (0.089 kg/km)</option>
+                        <option value="ev">⚡ Electric Vehicle (EV)</option>
+                        <option value="two_wheeler">🛵 Motorcycle / Scooter (Two-Wheeler)</option>
+                        <option value="petrol_car">🚗 Petrol Automobile</option>
+                        <option value="diesel_car">🚙 Diesel Automobile</option>
+                      </select>
                     </div>
 
-                    {/* Leg Controls */}
-                    {leg.mode === 'bicycle_walk' ? (
-                      <div className="flex items-center gap-2 text-xs text-emerald-800 font-medium">
-                        <Bike className="w-4 h-4 text-emerald-600" />
-                        <span>Zero emissions active transit mode.</span>
-                      </div>
-                    ) : isMotorizedPersonal && leg.method === 'fuel_receipt' ? (
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-zinc-600">Fuel Consumed per Month:</span>
-                          <span className="font-mono font-bold text-zinc-900">{leg.fuelLitersMonth} L/mo</span>
-                        </div>
+                    <button
+                      type="button"
+                      onClick={() => removeCommuteLeg(leg.id)}
+                      className="text-zinc-400 hover:text-red-600 transition"
+                      title="Remove Leg"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Mode-Specific Controls */}
+                  {['bicycle_walk', 'metro_rail', 'commuter_train', 'public_bus'].includes(leg.mode) && (
+                    <div className="flex items-center justify-between gap-4 pt-1">
+                      <span className="text-zinc-600">Weekly Commute Distance:</span>
+                      <div className="flex items-center gap-1.5">
                         <input
-                          type="range"
+                          type="number"
                           min={0}
-                          max={200}
-                          step={5}
-                          value={leg.fuelLitersMonth}
-                          onChange={(e) => updateCommuteLeg(leg.id, { fuelLitersMonth: Number(e.target.value) })}
-                          className="w-full h-1.5 bg-blue-200 rounded appearance-none accent-blue-600 cursor-pointer"
+                          value={leg.weeklyKm}
+                          onChange={(e) => updateCommuteLeg(leg.id, { weeklyKm: Math.max(0, Number(e.target.value)) })}
+                          className="w-20 bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs text-right"
+                        />
+                        <span className="text-zinc-500 font-mono">km/week</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {leg.mode === 'ev' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="text-zinc-600 block mb-1">Weekly Distance (km):</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={leg.weeklyKm}
+                          onChange={(e) => updateCommuteLeg(leg.id, { weeklyKm: Math.max(0, Number(e.target.value)) })}
+                          className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
                         />
                       </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-zinc-600">Weekly Commute Distance:</span>
+                      <div>
+                        <label className="text-zinc-600 block mb-1">Vehicle Efficiency (kWh/km):</label>
+                        <input
+                          type="number"
+                          step={0.01}
+                          min={0.05}
+                          value={leg.efficiency}
+                          onChange={(e) => updateCommuteLeg(leg.id, { efficiency: Number(e.target.value) })}
+                          className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {['two_wheeler', 'petrol_car', 'diesel_car'].includes(leg.mode) && (
+                    <div className="space-y-3 pt-1 border-t border-zinc-200/60">
+                      {/* Strict XOR Method Switcher */}
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <span className="text-zinc-700 font-bold">Accounting Method (Strict XOR):</span>
+                        <div className="flex bg-zinc-200/70 p-0.5 rounded-lg">
+                          <button
+                            type="button"
+                            onClick={() => updateCommuteLeg(leg.id, { method: 'distance' })}
+                            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${
+                              leg.method === 'distance'
+                                ? 'bg-white text-zinc-950 shadow-xs'
+                                : 'text-zinc-600 hover:text-zinc-950'
+                            }`}
+                          >
+                            Method B: Distance (km)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateCommuteLeg(leg.id, { method: 'fuel_receipt' })}
+                            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${
+                              leg.method === 'fuel_receipt'
+                                ? 'bg-white text-zinc-950 shadow-xs'
+                                : 'text-zinc-600 hover:text-zinc-950'
+                            }`}
+                          >
+                            Method A: Fuel Liters
+                          </button>
+                        </div>
+                      </div>
+
+                      {leg.method === 'distance' ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="text-zinc-600 block mb-1">Weekly Distance:</label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={leg.weeklyKm}
+                              onChange={(e) => updateCommuteLeg(leg.id, { weeklyKm: Math.max(0, Number(e.target.value)) })}
+                              className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                            />
+                            <span className="text-[10px] text-zinc-400 font-mono">km/week</span>
+                          </div>
+                          <div>
+                            <label className="text-zinc-600 block mb-1">Fuel Economy:</label>
+                            <input
+                              type="number"
+                              step={0.1}
+                              min={0.5}
+                              value={leg.efficiency}
+                              onChange={(e) => updateCommuteLeg(leg.id, { efficiency: Number(e.target.value) })}
+                              className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                            />
+                            <span className="text-[10px] text-zinc-400 font-mono">L/100km</span>
+                          </div>
+                          <div>
+                            <label className="text-zinc-600 block mb-1">Vehicle Occupancy:</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={6}
+                              value={leg.occupancy}
+                              onChange={(e) => updateCommuteLeg(leg.id, { occupancy: Math.max(1, Number(e.target.value) || 1) })}
+                              className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                            />
+                            <span className="text-[10px] text-zinc-400 font-mono">passengers</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-zinc-600">Monthly Fuel Purchased:</span>
                           <div className="flex items-center gap-1.5">
                             <input
                               type="number"
                               min={0}
-                              max={1000}
-                              value={leg.weeklyKm}
-                              onChange={(e) =>
-                                updateCommuteLeg(leg.id, { weeklyKm: Math.max(0, Number(e.target.value)) })
-                              }
-                              className="w-16 bg-white border border-zinc-200 rounded px-1.5 py-0.5 font-mono text-xs text-right font-bold"
+                              value={leg.fuelLitersMonth}
+                              onChange={(e) => updateCommuteLeg(leg.id, { fuelLitersMonth: Math.max(0, Number(e.target.value)) })}
+                              className="w-24 bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs text-right"
                             />
-                            <span className="font-mono text-zinc-400 text-xs">km/wk</span>
+                            <span className="text-zinc-500 font-mono">L/month</span>
                           </div>
                         </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={350}
-                          step={5}
-                          value={leg.weeklyKm}
-                          onChange={(e) => updateCommuteLeg(leg.id, { weeklyKm: Number(e.target.value) })}
-                          className="w-full h-1.5 bg-zinc-200 rounded appearance-none accent-emerald-700 cursor-pointer"
-                        />
-
-                        {/* Vehicle Efficiency if Motorized */}
-                        {(isMotorizedPersonal || leg.mode === 'ev') && (
-                          <div className="flex items-center justify-between pt-1 text-[11px] text-zinc-500 font-mono">
-                            <span>Vehicle Efficiency ({leg.mode === 'ev' ? 'kWh/km' : 'L/100km'}):</span>
-                            <input
-                              type="number"
-                              step="0.1"
-                              min="0.05"
-                              value={leg.efficiency}
-                              onChange={(e) => updateCommuteLeg(leg.id, { efficiency: Number(e.target.value) })}
-                              className="w-16 bg-white border border-zinc-200 rounded px-1.5 py-0.5 text-right font-bold text-zinc-900"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Card 3: Aviation (Flights, Cabin Class, Radiative Forcing) */}
+          {/* ========================================================== */}
+          {/* MODULE 4: AVIATION (EXACT DISTANCE × ROUTE CLASS + NON-CO2) */}
+          {/* ========================================================== */}
           <div className="bg-white rounded-2xl border border-zinc-200/90 p-5 sm:p-6 shadow-sm space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-100 pb-3">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3 flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 bg-sky-100 text-sky-800 rounded-lg">
                   <Plane className="w-4 h-4" />
                 </div>
                 <h3 className="text-base font-bold text-zinc-900">
-                  3. Aviation &amp; Flight Radiative Forcing
+                  4. Commercial Passenger Aviation
                 </h3>
               </div>
-
-              {/* Cabin Class Selector */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-zinc-500 font-medium">Cabin:</span>
-                <select
-                  value={cabinClass}
-                  onChange={(e) => setCabinClass(e.target.value as any)}
-                  className="bg-zinc-100 border border-zinc-200 rounded px-2 py-1 text-xs font-semibold text-zinc-800"
+              <div className="flex bg-zinc-100 p-0.5 rounded-lg border border-zinc-200">
+                <button
+                  type="button"
+                  onClick={() => setAviationMode('exact_km')}
+                  className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
+                    aviationMode === 'exact_km'
+                      ? 'bg-white text-zinc-950 shadow-xs'
+                      : 'text-zinc-600 hover:text-zinc-950'
+                  }`}
                 >
-                  <option value="economy">Economy (1.0×)</option>
-                  <option value="business">Business / First (2.0×)</option>
-                </select>
+                  Exact km
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAviationMode('counts')}
+                  className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
+                    aviationMode === 'counts'
+                      ? 'bg-white text-zinc-950 shadow-xs'
+                      : 'text-zinc-600 hover:text-zinc-950'
+                  }`}
+                >
+                  Flight Counts
+                </button>
               </div>
             </div>
 
-            {/* Aviation Input Mode (Flight count vs Exact Distance) */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-zinc-800 block">
-                  Short-Haul Flights (&lt;3 hrs)
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    max={30}
-                    value={shortHaulFlights}
-                    onChange={(e) => setShortHaulFlights(Math.max(0, Number(e.target.value)))}
-                    className="w-20 bg-zinc-100 border border-zinc-200 rounded px-2.5 py-1 font-mono font-bold text-xs text-zinc-900"
-                  />
-                  <span className="text-[11px] text-zinc-400">~1,200 km ea</span>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-zinc-800 block">
-                  Long-Haul Flights (&gt;3 hrs)
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    max={20}
-                    value={longHaulFlights}
-                    onChange={(e) => setLongHaulFlights(Math.max(0, Number(e.target.value)))}
-                    className="w-20 bg-zinc-100 border border-zinc-200 rounded px-2.5 py-1 font-mono font-bold text-xs text-zinc-900"
-                  />
-                  <span className="text-[11px] text-zinc-400">~7,000 km ea</span>
-                </div>
-              </div>
-            </div>
-
-            {/* High-Altitude Radiative Forcing Toggle */}
-            <div className="bg-sky-50/60 border border-sky-200/80 rounded-xl p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-sky-950">
-                  <input
-                    type="checkbox"
-                    checked={includeRadiativeForcing}
-                    onChange={(e) => setIncludeRadiativeForcing(e.target.checked)}
-                    className="rounded text-sky-700 focus:ring-sky-700"
-                  />
-                  <span>Include Non-CO₂ High-Altitude Radiative Forcing (1.9× Multiplier)</span>
-                </label>
-              </div>
-              <p className="text-[11px] text-sky-900/80 leading-relaxed">
-                Aviation causes warming beyond engine CO₂ due to short-lived contrail cirrus, NOx formation,
-                and particulate haze at cruising altitudes (IPCC/DEFRA 1.9× factor).
-              </p>
-              <div className="flex items-center gap-4 text-[11px] font-mono pt-1 text-sky-950">
-                <span>Direct CO₂: <strong>{footprint.directFlightTco2e.toFixed(3)} t</strong></span>
-                <span>Total Radiative Impact: <strong>{footprint.personalAviationTco2e.toFixed(3)} tCO₂e</strong></span>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 4: Optional Lifestyle Add-ons (Diet & Goods) */}
-          <div className="bg-white rounded-2xl border border-zinc-200/90 p-5 shadow-sm space-y-4">
-            <button
-              type="button"
-              onClick={() => setShowLifestyle(!showLifestyle)}
-              className="w-full flex items-center justify-between text-left"
-            >
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-emerald-100 text-emerald-800 rounded-lg">
-                  <Utensils className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-zinc-900">
-                    Optional: Dietary Profile &amp; Goods Consumption Spend
-                  </h4>
-                  <span className="text-[11px] text-zinc-500">
-                    Add food lifecycle and consumer goods to your footprint
-                  </span>
-                </div>
-              </div>
-              {showLifestyle ? <ChevronUp className="w-4 h-4 text-zinc-500" /> : <ChevronDown className="w-4 h-4 text-zinc-500" />}
-            </button>
-
-            {showLifestyle && (
-              <div className="pt-3 border-t border-zinc-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-zinc-800 block">
-                    Dietary Pattern:
+            {aviationMode === 'exact_km' ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="exact-flight-km" className="text-xs font-bold text-zinc-800">
+                    Annual Round-Trip Flight Distance:
                   </label>
-                  <select
-                    value={dietProfile}
-                    onChange={(e) => setDietProfile(e.target.value as any)}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-800"
-                  >
-                    <option value="vegan">Vegan (~1,020 kg CO₂e/yr)</option>
-                    <option value="vegetarian">Vegetarian (~1,460 kg CO₂e/yr)</option>
-                    <option value="mixed">Mixed / Omnivore (~2,050 kg CO₂e/yr)</option>
-                    <option value="high_meat">High-Meat Diet (~3,100 kg CO₂e/yr)</option>
-                  </select>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      id="exact-flight-km"
+                      type="number"
+                      min={0}
+                      value={exactFlightKmYear}
+                      onChange={(e) => setExactFlightKmYear(Math.max(0, Number(e.target.value)))}
+                      className="w-24 bg-zinc-100 border border-zinc-200 rounded px-2 py-1 font-mono font-bold text-xs text-right text-zinc-900"
+                    />
+                    <span className="text-xs font-mono text-zinc-500">km/yr</span>
+                  </div>
                 </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-zinc-800 block">
-                    Annual Non-Food Goods Spend:
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={spendCurrency}
-                      onChange={(e) => setSpendCurrency(e.target.value as any)}
-                      className="bg-zinc-100 border border-zinc-200 rounded px-2 py-1.5 text-xs font-bold text-zinc-800"
-                    >
-                      <option value="INR">₹ INR</option>
-                      <option value="USD">$ USD</option>
-                    </select>
+                <input
+                  type="range"
+                  min={0}
+                  max={30000}
+                  step={500}
+                  value={exactFlightKmYear}
+                  onChange={(e) => setExactFlightKmYear(Number(e.target.value))}
+                  className="w-full h-2 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-sky-600"
+                />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200 space-y-1">
+                  <span className="text-xs font-bold text-zinc-800 block">Short-Haul (&lt;1,500 km):</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-zinc-500 font-mono">1,200 km avg / flight</span>
                     <input
                       type="number"
                       min={0}
-                      value={goodsSpendAnnual}
-                      onChange={(e) => setGoodsSpendAnnual(Number(e.target.value))}
-                      placeholder="e.g. 50000"
-                      className="w-full bg-zinc-50 border border-zinc-200 rounded px-2.5 py-1.5 text-xs font-mono font-bold text-zinc-900"
+                      value={shortHaulFlights}
+                      onChange={(e) => setShortHaulFlights(Math.max(0, Number(e.target.value)))}
+                      className="w-16 bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-xs text-right text-zinc-900"
+                    />
+                  </div>
+                </div>
+                <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200 space-y-1">
+                  <span className="text-xs font-bold text-zinc-800 block">Long-Haul (&gt;1,500 km):</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-zinc-500 font-mono">7,000 km avg / flight</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={longHaulFlights}
+                      onChange={(e) => setLongHaulFlights(Math.max(0, Number(e.target.value)))}
+                      className="w-16 bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-xs text-right text-zinc-900"
                     />
                   </div>
                 </div>
               </div>
             )}
+
+            {/* Route / Cabin Class Selector */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <div>
+                <label className="text-xs font-bold text-zinc-800 block mb-1">
+                  Seating Class / Route Type:
+                </label>
+                <select
+                  value={flightRouteClass}
+                  onChange={(e) => setFlightRouteClass(e.target.value as any)}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-2.5 py-1.5 text-xs text-zinc-900 font-medium"
+                >
+                  <option value="short_econ">Short-Haul Economy (0.115 kg/km)</option>
+                  <option value="long_econ">Long-Haul Economy (0.102 kg/km)</option>
+                  <option value="business_first">Business / First Class (0.295 kg/km)</option>
+                  <option value="custom">Custom Emission Factor Override</option>
+                </select>
+              </div>
+
+              {flightRouteClass === 'custom' && (
+                <div>
+                  <label className="text-xs font-bold text-zinc-800 block mb-1">
+                    Custom Aviation EF:
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      step={0.001}
+                      min={0}
+                      value={customAviationEf}
+                      onChange={(e) => setCustomAviationEf(Number(e.target.value))}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded px-2 py-1.5 font-mono text-xs text-zinc-900"
+                    />
+                    <span className="text-zinc-500 font-mono text-[11px]">kg/pkm</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Optional Radiative Forcing (Unchecked by default) */}
+            <div className="pt-2 border-t border-zinc-100">
+              <label className="flex items-start gap-2 cursor-pointer text-xs text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={includeRadiativeForcing}
+                  onChange={(e) => setIncludeRadiativeForcing(e.target.checked)}
+                  className="rounded text-sky-600 focus:ring-sky-600 mt-0.5"
+                />
+                <div>
+                  <span className="font-semibold text-zinc-900">
+                    Include High-Altitude Non-CO₂ Radiative Forcing (+90% CIRRUS multiplier)
+                  </span>
+                  <span className="text-[11px] text-zinc-500 block leading-relaxed">
+                    Per DEFRA / UK DESNZ guidelines, high-altitude contrails and NOx impacts multiply gross climate forcing by 1.90. (Optional sensitivity check — unchecked by default).
+                  </span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {/* ========================================================== */}
+          {/* MODULE 5: FOOD & DIET (MASS IN KG × EF — OPT-IN) */}
+          {/* ========================================================== */}
+          <div className="bg-white rounded-2xl border border-zinc-200/90 p-5 sm:p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-emerald-100 text-emerald-800 rounded-lg">
+                  <Utensils className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-zinc-900">
+                  5. Food &amp; Diet (Mass in kg × Lifecycle EF)
+                </h3>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-zinc-800">
+                <input
+                  type="checkbox"
+                  checked={includeFood}
+                  onChange={(e) => setIncludeFood(e.target.checked)}
+                  className="rounded text-emerald-700 focus:ring-emerald-700"
+                />
+                <span>Include Food Assessment</span>
+              </label>
+            </div>
+
+            {includeFood ? (
+              <div className="space-y-4 animate-fadeIn">
+                {/* Diet Quick Fill Buttons */}
+                <div className="flex items-center gap-2 flex-wrap text-xs">
+                  <span className="text-zinc-500 font-mono text-[11px]">Autofill Presets:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBeefLambKgMonth(0);
+                      setPorkPoultryKgMonth(0);
+                      setDairyCheeseKgMonth(0);
+                      setPlantGrainsKgMonth(35);
+                    }}
+                    className="px-2 py-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded text-[11px] font-medium"
+                  >
+                    🌱 Vegan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBeefLambKgMonth(0);
+                      setPorkPoultryKgMonth(0);
+                      setDairyCheeseKgMonth(12);
+                      setPlantGrainsKgMonth(30);
+                    }}
+                    className="px-2 py-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded text-[11px] font-medium"
+                  >
+                    🧀 Vegetarian
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBeefLambKgMonth(2);
+                      setPorkPoultryKgMonth(5);
+                      setDairyCheeseKgMonth(10);
+                      setPlantGrainsKgMonth(25);
+                    }}
+                    className="px-2 py-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded text-[11px] font-medium"
+                  >
+                    🍗 Omnivore
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBeefLambKgMonth(6);
+                      setPorkPoultryKgMonth(10);
+                      setDairyCheeseKgMonth(12);
+                      setPlantGrainsKgMonth(20);
+                    }}
+                    className="px-2 py-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded text-[11px] font-medium"
+                  >
+                    🥩 High-Meat
+                  </button>
+                </div>
+
+                {/* 4 Mass Inputs */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-red-900">Beef &amp; Lamb:</span>
+                      <span className="font-mono text-[10px] text-zinc-500">27.0 kg CO₂e/kg</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        value={beefLambKgMonth}
+                        onChange={(e) => setBeefLambKgMonth(Math.max(0, Number(e.target.value)))}
+                        className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                      />
+                      <span className="text-zinc-600 font-mono">kg/mo</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-amber-900">Pork &amp; Poultry:</span>
+                      <span className="font-mono text-[10px] text-zinc-500">6.9 kg CO₂e/kg</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        value={porkPoultryKgMonth}
+                        onChange={(e) => setPorkPoultryKgMonth(Math.max(0, Number(e.target.value)))}
+                        className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                      />
+                      <span className="text-zinc-600 font-mono">kg/mo</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-yellow-900">Dairy &amp; Cheese:</span>
+                      <span className="font-mono text-[10px] text-zinc-500">8.5 kg CO₂e/kg</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        value={dairyCheeseKgMonth}
+                        onChange={(e) => setDairyCheeseKgMonth(Math.max(0, Number(e.target.value)))}
+                        className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                      />
+                      <span className="text-zinc-600 font-mono">kg/mo</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-emerald-900">Plant-Based / Grains / Legumes:</span>
+                      <span className="font-mono text-[10px] text-zinc-500">1.5 kg CO₂e/kg</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        value={plantGrainsKgMonth}
+                        onChange={(e) => setPlantGrainsKgMonth(Math.max(0, Number(e.target.value)))}
+                        className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                      />
+                      <span className="text-zinc-600 font-mono">kg/mo</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[11px] text-zinc-400 italic">
+                Food &amp; diet assessment disabled (0.000 tCO₂e). Check the box above to enter food mass by category.
+              </p>
+            )}
+          </div>
+
+          {/* ========================================================== */}
+          {/* MODULE 6: GOODS & SERVICES (LIFECYCLE QTY / SPEND FALLBACK) */}
+          {/* ========================================================== */}
+          <div className="bg-white rounded-2xl border border-zinc-200/90 p-5 sm:p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-purple-100 text-purple-800 rounded-lg">
+                  <ShoppingBag className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-zinc-900">
+                  6. Manufactured Goods &amp; Discretionary Services
+                </h3>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-zinc-800">
+                <input
+                  type="checkbox"
+                  checked={includeGoods}
+                  onChange={(e) => setIncludeGoods(e.target.checked)}
+                  className="rounded text-purple-700 focus:ring-purple-700"
+                />
+                <span>Include Goods Assessment</span>
+              </label>
+            </div>
+
+            {includeGoods ? (
+              <div className="space-y-4 animate-fadeIn text-xs">
+                {/* Mode Selector */}
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="font-bold text-zinc-800">Accounting Methodology:</span>
+                  <div className="flex bg-zinc-100 p-0.5 rounded-lg border border-zinc-200">
+                    <button
+                      type="button"
+                      onClick={() => setGoodsMode('lifecycle_qty')}
+                      className={`px-2.5 py-1 rounded text-[11px] font-semibold transition ${
+                        goodsMode === 'lifecycle_qty'
+                          ? 'bg-white text-zinc-950 shadow-xs'
+                          : 'text-zinc-600 hover:text-zinc-950'
+                      }`}
+                    >
+                      Preferred: Product Lifecycle Quantities
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGoodsMode('spend')}
+                      className={`px-2.5 py-1 rounded text-[11px] font-semibold transition ${
+                        goodsMode === 'spend'
+                          ? 'bg-white text-zinc-950 shadow-xs'
+                          : 'text-zinc-600 hover:text-zinc-950'
+                      }`}
+                    >
+                      Fallback: Annual Spend
+                    </button>
+                  </div>
+                </div>
+
+                {goodsMode === 'lifecycle_qty' ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                    <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
+                      <div className="flex items-center gap-1 font-bold text-zinc-800 mb-1">
+                        <Smartphone className="w-3.5 h-3.5 text-zinc-500" />
+                        <span>Smartphones:</span>
+                      </div>
+                      <input
+                        type="number"
+                        min={0}
+                        value={smartphonesQtyYear}
+                        onChange={(e) => setSmartphonesQtyYear(Math.max(0, Number(e.target.value)))}
+                        className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                      />
+                      <span className="text-[10px] text-zinc-400 font-mono">70 kg/phone</span>
+                    </div>
+
+                    <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
+                      <div className="flex items-center gap-1 font-bold text-zinc-800 mb-1">
+                        <Laptop className="w-3.5 h-3.5 text-zinc-500" />
+                        <span>Laptops/PCs:</span>
+                      </div>
+                      <input
+                        type="number"
+                        min={0}
+                        value={laptopsQtyYear}
+                        onChange={(e) => setLaptopsQtyYear(Math.max(0, Number(e.target.value)))}
+                        className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                      />
+                      <span className="text-[10px] text-zinc-400 font-mono">250 kg/PC</span>
+                    </div>
+
+                    <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
+                      <div className="flex items-center gap-1 font-bold text-zinc-800 mb-1">
+                        <Shirt className="w-3.5 h-3.5 text-zinc-500" />
+                        <span>Apparel Items:</span>
+                      </div>
+                      <input
+                        type="number"
+                        min={0}
+                        value={clothingItemsYear}
+                        onChange={(e) => setClothingItemsYear(Math.max(0, Number(e.target.value)))}
+                        className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                      />
+                      <span className="text-[10px] text-zinc-400 font-mono">15 kg/garment</span>
+                    </div>
+
+                    <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200">
+                      <div className="flex items-center gap-1 font-bold text-zinc-800 mb-1">
+                        <ShoppingBag className="w-3.5 h-3.5 text-zinc-500" />
+                        <span>Footwear:</span>
+                      </div>
+                      <input
+                        type="number"
+                        min={0}
+                        value={footwearPairsYear}
+                        onChange={(e) => setFootwearPairsYear(Math.max(0, Number(e.target.value)))}
+                        className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs"
+                      />
+                      <span className="text-[10px] text-zinc-400 font-mono">18 kg/pair</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                    <div>
+                      <label className="text-zinc-700 block mb-1">Currency &amp; Price Year:</label>
+                      <div className="flex gap-1.5">
+                        <select
+                          value={spendCurrency}
+                          onChange={(e) => setSpendCurrency(e.target.value as any)}
+                          className="bg-white border border-zinc-300 rounded px-2 py-1 text-xs font-bold text-zinc-800"
+                        >
+                          <option value="INR">₹ INR</option>
+                          <option value="USD">$ USD</option>
+                          <option value="EUR">€ EUR</option>
+                          <option value="GBP">£ GBP</option>
+                        </select>
+                        <span className="bg-zinc-100 border border-zinc-200 rounded px-2 py-1 font-mono text-zinc-600 text-xs">
+                          2024 Base
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-zinc-700 block mb-1">Sector Intensity:</label>
+                      <select
+                        value={spendSector}
+                        onChange={(e) => setSpendSector(e.target.value as any)}
+                        className="w-full bg-white border border-zinc-300 rounded px-2 py-1 text-xs text-zinc-800 font-medium"
+                      >
+                        <option value="electronics">Consumer Electronics (0.320 kg/$)</option>
+                        <option value="clothing">Clothing &amp; Textiles (0.450 kg/$)</option>
+                        <option value="services">General Services (0.180 kg/$)</option>
+                        <option value="appliances">Appliances (0.380 kg/$)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-zinc-700 block mb-1">Annual Spend:</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={spendAmount}
+                        onChange={(e) => setSpendAmount(Math.max(0, Number(e.target.value)))}
+                        className="w-full bg-white border border-zinc-300 rounded px-2 py-1 font-mono text-zinc-900 text-xs text-right"
+                        placeholder="e.g. 50000"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-[11px] text-zinc-400 italic">
+                Goods &amp; services assessment disabled (0.000 tCO₂e). Check the box above to track product lifecycle acquisitions.
+              </p>
+            )}
+          </div>
+
+          {/* ========================================================== */}
+          {/* MODULE 7: WATER & MUNICIPAL WASTE (OPT-IN, DEFAULT 0) */}
+          {/* ========================================================== */}
+          <div className="bg-white rounded-2xl border border-zinc-200/90 p-5 sm:p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-cyan-100 text-cyan-800 rounded-lg">
+                  <Droplet className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-zinc-900">
+                  7. Municipal Water &amp; Solid Waste (Opt-In)
+                </h3>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-zinc-800">
+                <input
+                  type="checkbox"
+                  checked={includeWaterWaste}
+                  onChange={(e) => setIncludeWaterWaste(e.target.checked)}
+                  className="rounded text-cyan-700 focus:ring-cyan-700"
+                />
+                <span>Include Utilities Assessment</span>
+              </label>
+            </div>
+
+            {includeWaterWaste ? (
+              <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-200 space-y-4 text-xs animate-fadeIn">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-700 flex items-center gap-1 font-medium">
+                        <Droplet className="w-3.5 h-3.5 text-blue-500" />
+                        Water Supply &amp; Sewage:
+                      </span>
+                      <span className="font-mono font-bold text-zinc-900">{waterM3Month} m³/mo</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={40}
+                      step={1}
+                      value={waterM3Month}
+                      onChange={(e) => setWaterM3Month(Number(e.target.value))}
+                      className="w-full h-1.5 bg-blue-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                    />
+                    <div className="flex justify-between text-[10px] text-zinc-400 font-mono">
+                      <span>0 m³</span>
+                      <span>20 m³</span>
+                      <span>40 m³</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-700 flex items-center gap-1 font-medium">
+                        <Trash className="w-3.5 h-3.5 text-zinc-500" />
+                        Municipal Solid Waste:
+                      </span>
+                      <span className="font-mono font-bold text-zinc-900">{wasteKgWeek} kg/wk</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={30}
+                      step={1}
+                      value={wasteKgWeek}
+                      onChange={(e) => setWasteKgWeek(Number(e.target.value))}
+                      className="w-full h-1.5 bg-zinc-300 rounded-lg appearance-none cursor-pointer accent-zinc-700"
+                    />
+                    <div className="flex justify-between text-[10px] text-zinc-400 font-mono">
+                      <span>0 kg</span>
+                      <span>15 kg</span>
+                      <span>30 kg</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[11px] text-zinc-400 italic">
+                Water and solid waste utilities disabled (0.000 tCO₂e). Check the box above to opt in.
+              </p>
+            )}
           </div>
         </div>
 
         {/* Right Column: Instant Result Card & Breakdown */}
-        <div className="lg:col-span-5 bg-gradient-to-br from-[#0F3A2E] to-[#0A261E] text-white rounded-2xl p-5 sm:p-7 shadow-lg space-y-6 lg:sticky lg:top-24">
-          <div className="border-b border-emerald-800/80 pb-4">
-            <span className="text-[11px] font-mono text-emerald-300 font-bold uppercase tracking-wider block">
-              Personal Per-Capita Footprint
-            </span>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-4xl sm:text-5xl font-mono font-black tracking-tight text-white">
-                {footprint.totalPersonalTco2e.toFixed(3)}
+        <div className="lg:col-span-5 space-y-6 lg:sticky lg:top-24">
+          <div className="bg-gradient-to-br from-[#0F3A2E] to-[#0A261E] text-white rounded-2xl p-5 sm:p-7 shadow-lg space-y-6">
+            <div className="border-b border-emerald-800/80 pb-4">
+              <span className="text-[11px] font-mono text-emerald-300 font-bold uppercase tracking-wider block">
+                Personal Per-Capita Footprint
               </span>
-              <span className="text-sm font-mono text-emerald-200 font-medium">
-                tCO₂e / year
-              </span>
-            </div>
-            {footprint.validResidents > 1 && (
-              <span className="text-[11px] font-mono text-emerald-300/80 block mt-1">
-                Gross Household Total: <strong>{footprint.totalHouseholdGrossTco2e.toFixed(2)} tCO₂e</strong> (shared by {footprint.validResidents} residents)
-              </span>
-            )}
-          </div>
-
-          {/* National Benchmark Progress Bar */}
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs font-mono">
-              <span className="text-emerald-300">Vs National Average:</span>
-              <span className="font-bold text-white">
-                {footprint.pctOfAverage}% ({footprint.nationalAverage} tCO₂e avg)
-              </span>
-            </div>
-            <div className="w-full h-2 bg-emerald-950 rounded-full overflow-hidden border border-emerald-800/60">
-              <div
-                className={`h-full transition-all duration-500 rounded-full ${
-                  footprint.pctOfAverage > 100 ? 'bg-amber-400' : 'bg-emerald-400'
-                }`}
-                style={{ width: `${Math.min(100, footprint.pctOfAverage)}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Scope Breakdown */}
-          <div className="space-y-2 pt-2 border-t border-emerald-800/80">
-            <span className="text-[11px] font-mono text-emerald-300 font-bold uppercase tracking-wider block">
-              Source Breakdown (Full Double Precision)
-            </span>
-            <div className="space-y-2 text-xs font-mono">
-              <div className="flex items-center justify-between p-2 rounded bg-emerald-900/60 border border-emerald-700/50">
-                <span className="text-emerald-200">Scope 2: Grid Electricity</span>
-                <span className="font-bold text-white">{footprint.personalElecTco2e.toFixed(3)} t</span>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded bg-emerald-900/60 border border-emerald-700/50">
-                <span className="text-emerald-200">Scope 1: Cooking ({cookingFuel.toUpperCase()})</span>
-                <span className="font-bold text-white">{footprint.personalCookingTco2e.toFixed(3)} t</span>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded bg-emerald-900/60 border border-emerald-700/50">
-                <span className="text-emerald-200">Scope 3: Commute &amp; Aviation</span>
-                <span className="font-bold text-white">
-                  {(footprint.personalTransportTco2e + footprint.personalAviationTco2e).toFixed(3)} t
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className="text-4xl sm:text-5xl font-mono font-black tracking-tight text-white">
+                  {calculation.totalPersonalTco2e.toFixed(3)}
+                </span>
+                <span className="text-sm font-mono text-emerald-200 font-medium">
+                  tCO₂e / year
                 </span>
               </div>
-              {includeWaterWaste && (
-                <div className="flex items-center justify-between p-2 rounded bg-emerald-900/60 border border-emerald-700/50">
-                  <span className="text-emerald-200">Scope 3: Water &amp; Waste</span>
-                  <span className="font-bold text-white">{footprint.personalWaterWasteTco2e.toFixed(3)} t</span>
-                </div>
-              )}
-              {showLifestyle && (
-                <div className="flex items-center justify-between p-2 rounded bg-emerald-900/60 border border-emerald-700/50">
-                  <span className="text-emerald-200">Scope 3: Diet &amp; Goods Spend</span>
-                  <span className="font-bold text-white">
-                    {(footprint.dietTco2e + footprint.goodsTco2e).toFixed(3)} t
-                  </span>
-                </div>
+              <span className="text-xs font-mono text-emerald-300/90 block mt-0.5">
+                = {(calculation.totalPersonalTco2e * 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} kg CO₂e / yr
+              </span>
+              {calculation.validResidents > 1 && (
+                <span className="text-[11px] font-mono text-emerald-300/80 block mt-1.5">
+                  Gross Household: <strong>{calculation.totalHouseholdGrossTco2e.toFixed(2)} tCO₂e</strong> (shared by {calculation.validResidents} residents)
+                </span>
               )}
             </div>
-          </div>
 
-          {/* Credits Needed */}
-          <div className="p-4 rounded-xl bg-emerald-900/80 border border-emerald-600/70 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-mono text-emerald-300 block">
-                Credits Required to Neutralize:
-              </span>
-              <span className="text-2xl font-bold font-mono text-white">
-                {footprint.creditsNeeded} Credits
-              </span>
+            {/* National Benchmark Progress Bar */}
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-mono">
+                <span className="text-emerald-300">Vs National Average:</span>
+                <span className="font-bold text-white">
+                  {calculation.pctOfAverage}% ({calculation.nationalAverage} tCO₂e avg)
+                </span>
+              </div>
+              <div className="w-full h-2 bg-emerald-950 rounded-full overflow-hidden border border-emerald-800/60">
+                <div
+                  className={`h-full transition-all duration-500 rounded-full ${
+                    calculation.pctOfAverage > 100 ? 'bg-amber-400' : 'bg-emerald-400'
+                  }`}
+                  style={{ width: `${Math.min(100, calculation.pctOfAverage)}%` }}
+                />
+              </div>
             </div>
-            <Scale className="w-8 h-8 text-emerald-300 opacity-80" />
-          </div>
 
-          {/* Switch to Detailed Audit Link */}
-          <div className="pt-2">
-            {onSwitchToAudit ? (
-              <button
-                type="button"
-                onClick={onSwitchToAudit}
-                className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition border border-white/20 group"
-              >
-                <span>Need Corporate or Verra Audit? Switch to Registry Suite</span>
-                <ArrowRight className="w-4 h-4 text-emerald-300 group-hover:translate-x-1 transition-transform" />
-              </button>
-            ) : (
-              <a
-                href="#carbon-crediting-suite"
-                className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition border border-white/20 group"
-              >
-                <span>Need Corporate or Verra Audit? Switch to Registry Suite</span>
-                <ArrowRight className="w-4 h-4 text-emerald-300 group-hover:translate-x-1 transition-transform" />
-              </a>
-            )}
+            {/* Double-Precision Scope Breakdown */}
+            <div className="space-y-2 pt-2 border-t border-emerald-800/80">
+              <span className="text-[11px] font-mono text-emerald-300 font-bold uppercase tracking-wider block">
+                Source Breakdown (Double-Precision Floating-Point)
+              </span>
+              <div className="space-y-1.5 text-xs font-mono">
+                <div className="flex items-center justify-between p-2 rounded bg-emerald-900/60 border border-emerald-700/50">
+                  <span className="text-emerald-200">Scope 2: Grid Electricity</span>
+                  <span className="font-bold text-white">{calculation.personalElecTco2e.toFixed(3)} t</span>
+                </div>
+                {includeHeating && (
+                  <div className="flex items-center justify-between p-2 rounded bg-emerald-900/60 border border-emerald-700/50">
+                    <span className="text-emerald-200">Scope 1/2: Home Heating</span>
+                    <span className="font-bold text-white">{calculation.personalHeatingTco2e.toFixed(3)} t</span>
+                  </div>
+                )}
+                {cookingFuel !== 'none' && (
+                  <div className="flex items-center justify-between p-2 rounded bg-emerald-900/60 border border-emerald-700/50">
+                    <span className="text-emerald-200">Scope 1: Cooking ({cookingFuel.toUpperCase()})</span>
+                    <span className="font-bold text-white">{calculation.personalCookingTco2e.toFixed(3)} t</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between p-2 rounded bg-emerald-900/60 border border-emerald-700/50">
+                  <span className="text-emerald-200">Scope 3: Ground Commute</span>
+                  <span className="font-bold text-white">{calculation.personalTransportTco2e.toFixed(3)} t</span>
+                </div>
+                {calculation.personalAviationTco2e > 0 && (
+                  <div className="flex items-center justify-between p-2 rounded bg-emerald-900/60 border border-emerald-700/50">
+                    <span className="text-emerald-200">Scope 3: Commercial Aviation</span>
+                    <span className="font-bold text-white">{calculation.personalAviationTco2e.toFixed(3)} t</span>
+                  </div>
+                )}
+                {includeFood && (
+                  <div className="flex items-center justify-between p-2 rounded bg-emerald-900/60 border border-emerald-700/50">
+                    <span className="text-emerald-200">Scope 3: Dietary Intake</span>
+                    <span className="font-bold text-white">{calculation.personalFoodTco2e.toFixed(3)} t</span>
+                  </div>
+                )}
+                {includeGoods && (
+                  <div className="flex items-center justify-between p-2 rounded bg-emerald-900/60 border border-emerald-700/50">
+                    <span className="text-emerald-200">Scope 3: Manufactured Goods</span>
+                    <span className="font-bold text-white">{calculation.personalGoodsTco2e.toFixed(3)} t</span>
+                  </div>
+                )}
+                {includeWaterWaste && (
+                  <div className="flex items-center justify-between p-2 rounded bg-emerald-900/60 border border-emerald-700/50">
+                    <span className="text-emerald-200">Scope 3: Municipal Water &amp; Waste</span>
+                    <span className="font-bold text-white">{calculation.personalWaterWasteTco2e.toFixed(3)} t</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Credits Needed */}
+            <div className="p-4 rounded-xl bg-emerald-900/80 border border-emerald-600/70 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-mono text-emerald-300 block">
+                  Credits Required to Neutralize:
+                </span>
+                <span className="text-2xl font-bold font-mono text-white">
+                  {calculation.creditsNeeded} Credits
+                </span>
+              </div>
+              <Scale className="w-8 h-8 text-emerald-300 opacity-80" />
+            </div>
+
+            {/* Switch to Detailed Audit Link */}
+            <div className="pt-2">
+              {onSwitchToAudit ? (
+                <button
+                  type="button"
+                  onClick={onSwitchToAudit}
+                  className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition border border-white/20 group"
+                >
+                  <span>Need Corporate or Verra Audit? Switch to Registry Suite</span>
+                  <ArrowRight className="w-4 h-4 text-emerald-300 group-hover:translate-x-1 transition-transform" />
+                </button>
+              ) : (
+                <a
+                  href="#carbon-crediting-suite"
+                  className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition border border-white/20 group"
+                >
+                  <span>Need Corporate or Verra Audit? Switch to Registry Suite</span>
+                  <ArrowRight className="w-4 h-4 text-emerald-300 group-hover:translate-x-1 transition-transform" />
+                </a>
+              )}
+            </div>
           </div>
         </div>
+      </div>
+
+      {/* ============================================================== */}
+      {/* STEP 3: LIVE FACTOR PROVENANCE & AUDIT METADATA TABLE */}
+      {/* ============================================================== */}
+      <div className="bg-white rounded-2xl border border-zinc-200/90 shadow-sm overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowProvenanceLedger(!showProvenanceLedger)}
+          className="w-full px-5 py-4 bg-zinc-50/80 hover:bg-zinc-100/80 border-b border-zinc-200/80 flex items-center justify-between text-left transition"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-emerald-100 text-emerald-800 rounded-lg">
+              <FileText className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-zinc-950 flex items-center gap-2">
+                <span>Audit Factor &amp; Provenance Ledger</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold">
+                  {calculation.provenanceList.length} Active Items
+                </span>
+              </h3>
+              <p className="text-[11px] text-zinc-500">
+                Statutory emission factors, datasets, and boundary allocations (KTH Specification / ISO 14064)
+              </p>
+            </div>
+          </div>
+          {showProvenanceLedger ? (
+            <ChevronUp className="w-5 h-5 text-zinc-500 shrink-0" />
+          ) : (
+            <ChevronDown className="w-5 h-5 text-zinc-500 shrink-0" />
+          )}
+        </button>
+
+        {showProvenanceLedger && (
+          <div className="p-4 sm:p-6 space-y-4 animate-fadeIn">
+            {calculation.provenanceList.length > 0 ? (
+              <div className="w-full overflow-x-auto border border-zinc-200 rounded-xl">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead className="bg-zinc-100 text-zinc-700 border-b border-zinc-200 font-bold uppercase text-[10px] tracking-wider">
+                    <tr>
+                      <th className="px-3 py-2.5">Domain &amp; Activity</th>
+                      <th className="px-3 py-2.5">Annual Activity Level</th>
+                      <th className="px-3 py-2.5">Emission Factor</th>
+                      <th className="px-3 py-2.5">Statutory Source</th>
+                      <th className="px-3 py-2.5">Boundary / Allocation</th>
+                      <th className="px-3 py-2.5 text-right">Net tCO₂e</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-200">
+                    {calculation.provenanceList.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-zinc-50/80 transition-colors">
+                        <td className="px-3 py-2 font-medium text-zinc-900">
+                          <span className="text-[10px] text-zinc-400 block font-sans uppercase">
+                            {item.domain}
+                          </span>
+                          {item.activity}
+                        </td>
+                        <td className="px-3 py-2 text-zinc-700 font-bold">{item.quantity}</td>
+                        <td className="px-3 py-2 text-emerald-800 font-bold">{item.factor}</td>
+                        <td className="px-3 py-2 text-zinc-600 text-[11px] max-w-[220px]">
+                          {item.source}
+                        </td>
+                        <td className="px-3 py-2 text-zinc-600 text-[11px]">{item.boundary}</td>
+                        <td className="px-3 py-2 text-right font-bold text-zinc-950">
+                          {item.emissionsTco2e.toFixed(3)} t
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-zinc-100/80 font-bold border-t border-zinc-200 text-zinc-900">
+                    <tr>
+                      <td colSpan={5} className="px-3 py-2.5 text-right uppercase text-[11px]">
+                        Personal Footprint Total (Double Precision Sum):
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-emerald-800 text-sm">
+                        {calculation.totalPersonalTco2e.toFixed(3)} tCO₂e
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            ) : (
+              <div className="p-6 text-center text-zinc-500 bg-zinc-50 rounded-xl border border-zinc-200 text-xs">
+                All activity lines are currently at zero. Enter your household electricity, commute, or optional categories above to view real-time statutory provenance and audit trails.
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ============================================================== */}
@@ -1248,85 +2521,47 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
         {/* Retirement Quote Preview Modal / Drawer */}
         {retirementQuote && (
           <div className="p-5 sm:p-7 bg-zinc-900 text-white rounded-xl border border-zinc-800 shadow-xl space-y-5 animate-fadeIn">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-4 flex-wrap gap-2">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                <h4 className="text-sm sm:text-base font-bold text-white">
-                  Official Certificate of Carbon Retirement (Preview)
-                </h4>
+                <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                  ✓
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white">
+                    Retirement Commitment Prepared
+                  </h4>
+                  <span className="text-[11px] font-mono text-zinc-400">
+                    Quote ID: {retirementQuote.quote_id}
+                  </span>
+                </div>
               </div>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-300 font-semibold">
-                {retirementQuote.sandbox_mode ? 'Sandbox Mode' : 'Live Carbonmark Verified'}
+              <span className="px-2.5 py-1 rounded bg-emerald-950 text-emerald-300 border border-emerald-700 font-mono text-xs font-bold">
+                {retirementQuote.retirement_summary.credits_to_retire} Credits = ${retirementQuote.pricing.total_usd.toFixed(2)} USD
               </span>
             </div>
 
-            {/* Certificate Presentation Box */}
-            <div className="border border-emerald-500/30 bg-emerald-950/20 rounded-xl p-4 sm:p-5 relative overflow-hidden">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-emerald-800/40 pb-3 mb-3">
+            {/* Official Certificate Preview */}
+            <div className="p-5 bg-zinc-950 border border-emerald-800/80 rounded-xl font-mono text-xs space-y-3 relative overflow-hidden">
+              <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300 border border-emerald-700/80 text-[10px] uppercase font-bold">
+                Official Specimen
+              </div>
+              <div className="text-emerald-400 font-bold uppercase tracking-widest text-[11px]">
+                International Carbon Registry · Certificate of Retirement
+              </div>
+              <div className="space-y-1 text-zinc-300">
                 <div>
-                  <span className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest font-bold">
-                    Official Certificate of Retirement
-                  </span>
-                  <div className="text-base sm:text-lg font-bold text-white mt-0.5">
-                    Issued to: {retirementQuote.certificate_preview.beneficiary_name}
-                  </div>
+                  <span className="text-zinc-500">Beneficiary:</span> <strong>{retirementQuote.retirement_summary.beneficiary}</strong>
                 </div>
-                <div className="text-left sm:text-right font-mono">
-                  <span className="text-[10px] text-zinc-400 block">Certificate Serial Number</span>
-                  <span className="text-xs sm:text-sm font-bold text-emerald-400">
-                    {retirementQuote.certificate_preview.certificate_id}
+                <div>
+                  <span className="text-zinc-500">Registry Project:</span> {retirementQuote.project.name} ({retirementQuote.project.standard})
+                </div>
+                <div>
+                  <span className="text-zinc-500">Permanent Volume:</span>{' '}
+                  <span className="text-emerald-400 font-bold">
+                    {retirementQuote.retirement_summary.credits_to_retire} Metric Tonnes CO₂e
                   </span>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
-                <div className="bg-zinc-800/60 p-2.5 rounded border border-zinc-700/50">
-                  <span className="text-zinc-400 text-[10px] block">Volume Retired</span>
-                  <span className="text-sm font-bold text-white">
-                    {retirementQuote.quote.quantity_tco2e} tCO₂e
-                  </span>
-                  <span className="text-[10px] text-zinc-400 block">
-                    ({retirementQuote.quote.quantity_kg_co2e} kg CO₂e)
-                  </span>
-                </div>
-
-                <div className="bg-zinc-800/60 p-2.5 rounded border border-zinc-700/50">
-                  <span className="text-zinc-400 text-[10px] block">Verified Project</span>
-                  <span className="text-xs font-bold text-white truncate block" title={retirementQuote.project.name}>
-                    {retirementQuote.project.name}
-                  </span>
-                  <span className="text-[10px] text-emerald-400 block">
-                    {retirementQuote.project.standard}
-                  </span>
-                </div>
-
-                <div className="bg-zinc-800/60 p-2.5 rounded border border-zinc-700/50">
-                  <span className="text-zinc-400 text-[10px] block">Methodology &amp; Vintage</span>
-                  <span className="text-xs font-bold text-white truncate block">
-                    {retirementQuote.project.methodology}
-                  </span>
-                  <span className="text-[10px] text-zinc-400 block">
-                    Vintage: {retirementQuote.project.vintage}
-                  </span>
-                </div>
-
-                <div className="bg-zinc-800/60 p-2.5 rounded border border-zinc-700/50">
-                  <span className="text-zinc-400 text-[10px] block">Quote Total</span>
-                  <span className="text-sm font-bold text-emerald-400 block">
-                    ${retirementQuote.quote.total_usd} USD
-                  </span>
-                  <span className="text-[10px] text-zinc-400 block">
-                    Unit: ${retirementQuote.quote.price_per_tco2e_usd}/t
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-3 pt-3 border-t border-emerald-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-zinc-400">
-                <div className="flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>Status: <strong>{retirementQuote.certificate_preview.legal_status}</strong></span>
-                </div>
-                <div className="font-mono text-[10px] text-zinc-500">
+                <div className="text-[11px] text-zinc-500 truncate">
                   Batch: {retirementQuote.project.serial_number_preview}
                 </div>
               </div>
@@ -1361,22 +2596,29 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
         )}
       </div>
 
-      {/* Mobile Sticky Bottom Summary Bar */}
+      {/* ============================================================== */}
+      {/* MOBILE STICKY BOTTOM SUMMARY BAR */}
+      {/* ============================================================== */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-zinc-950/95 backdrop-blur-md text-white border-t border-zinc-800 px-4 py-2.5 flex items-center justify-between shadow-2xl">
         <div>
           <span className="text-[10px] font-mono text-emerald-400 block uppercase">Personal Footprint</span>
-          <span className="text-base font-bold font-mono text-white">
-            {footprint.totalPersonalTco2e.toFixed(3)} <span className="text-[10px] text-zinc-400">tCO₂e/yr</span>
-          </span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-base font-bold font-mono text-white">
+              {(calculation.totalPersonalTco2e * 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-[10px] text-zinc-400 font-normal">kg</span>
+            </span>
+            <span className="text-xs font-mono text-emerald-300 font-medium">
+              ({calculation.totalPersonalTco2e.toFixed(3)} t)
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <div className="text-right">
             <span className="text-[10px] font-mono text-zinc-400 block">Neutralize</span>
-            <span className="text-xs font-bold font-mono text-emerald-400">{footprint.creditsNeeded} Credits</span>
+            <span className="text-xs font-bold font-mono text-emerald-400">{calculation.creditsNeeded} Credits</span>
           </div>
           <a
             href="#retire-section"
-            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold transition"
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold transition shadow-sm"
           >
             Retire
           </a>

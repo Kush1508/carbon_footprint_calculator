@@ -49,7 +49,7 @@ export function CalculatorExperience() {
               }`}
             >
               <Zap className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${mode === 'quick' ? 'text-amber-500 fill-amber-500' : 'text-zinc-500'}`} />
-              <span>⚡ Quick / Exact Household</span>
+              <span>⚡ Personal Lifecycle (KTH Spec)</span>
             </button>
 
             {/* Tab 2: Registry Audit & Issuance */}
