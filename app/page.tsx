@@ -1,6 +1,5 @@
 import React from 'react';
-import App from '@/App';
-import { CarbonCreditingSuite } from '@/components/sections/CarbonCreditingSuite';
+import { CalculatorExperience } from '@/components/layout/CalculatorExperience';
 import Link from 'next/link';
 import {
   ShieldCheck,
@@ -103,11 +102,8 @@ export default function Page() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqPageSchema) }}
       />
 
-      {/* Interactive Client-Side Calculator Application */}
-      <App />
-
-      {/* Registry-Grade Carbon Credit Eligibility & Issuance Suite */}
-      <CarbonCreditingSuite />
+      {/* Progressive Disclosure Experience (Quick Mode vs Registry-Grade Audit) */}
+      <CalculatorExperience />
 
       {/* Semantic Server-Side Rendered Content for AI Agents & Search Engines */}
       <section

@@ -5,9 +5,10 @@
 
 ## Core Pages & Documentation
 
-- [Home & Interactive Calculator](https://carbonfootprintcalculator-two.vercel.app/): Primary application interface with tabbed views for Households, Agriculture, Corporate Scopes, and Registry Crediting Suite.
-- [OpenAPI Specification](https://carbonfootprintcalculator-two.vercel.app/openapi.json): Full OpenAPI 3.1.0 schema documenting endpoints, query parameters, crediting modes, and JSON payloads.
+- [Home & Interactive Calculator](https://carbonfootprintcalculator-two.vercel.app/): Progressive disclosure interface supporting 60-second Quick Household Estimate mode and Institutional Registry-Grade Audit suite.
+- [OpenAPI Specification](https://carbonfootprintcalculator-two.vercel.app/openapi.json): Full OpenAPI 3.1.0 schema documenting calculation & retirement quote endpoints, crediting modes, and schemas.
 - [Calculation REST API](https://carbonfootprintcalculator-two.vercel.app/api/calculate): Public dual GET/POST endpoint executing mathematical carbon models with Zod validation.
+- [Retirement Quote REST API](https://carbonfootprintcalculator-two.vercel.app/api/retire-quote): Public dual GET/POST endpoint returning real-time pricing quotes and serialized retirement certificates (CL-RET-2026-XXXXXX) for verified carbon credits (Verra/Gold Standard).
 
 ## Statutory Grid Emission Factors (3-Decimal Precision)
 - **India CEA v19**: `0.716 kg CO2e/kWh` (Central Electricity Authority Baseline v19)

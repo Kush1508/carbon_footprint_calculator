@@ -327,6 +327,33 @@
               }
             }
           }
+      }
+    },
+    "/api/retire-quote": {
+      "post": {
+        "summary": "Generate official carbon retirement quote & serialized certificate preview",
+        "operationId": "generateRetireQuote",
+        "description": "Calculates settlement cost, registry fees, and serialized certificate identifier for permanent non-tradable credit retirement on Verra, Gold Standard, or Carbonmark.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tco2e": { "type": "number", "minimum": 0.001, "default": 1.0 },
+                  "projectId": { "type": "string", "enum": ["india_renewables", "verra_vm0042_soil", "gold_standard_cookstoves"], "default": "india_renewables" },
+                  "beneficiaryName": { "type": "string", "default": "Verified Household" },
+                  "retirementMessage": { "type": "string", "default": "Carbon Neutrality Commitment" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Quote & Certificate Preview successfully generated"
+          }
         }
       }
     }
