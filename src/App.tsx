@@ -78,8 +78,18 @@ const INITIAL_CORPORATE_DATA: CorporateData = {
   developerWorkstationsCount: 45,
 };
 
-export default function App() {
-  const [archetype, setArchetype] = useState<Archetype>('corporate');
+interface AppProps {
+  initialArchetype?: Archetype;
+}
+
+export default function App({ initialArchetype = 'corporate' }: AppProps) {
+  const [archetype, setArchetype] = useState<Archetype>(initialArchetype);
+
+  React.useEffect(() => {
+    if (initialArchetype) {
+      setArchetype(initialArchetype);
+    }
+  }, [initialArchetype]);
   const [selectedGridKey, setSelectedGridKey] = useState<RegionalGridKey>('india_cea');
 
   // Input states for each archetype
