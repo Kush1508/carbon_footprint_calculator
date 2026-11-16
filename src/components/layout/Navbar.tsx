@@ -57,47 +57,45 @@ export function Navbar({
         </div>
 
         {/* Global Archetype Switcher Segmented Control */}
+        {/* Global Archetype Switcher: House, Farmers, Industry */}
         <div className="flex items-center bg-zinc-100 p-0.5 rounded-lg border border-zinc-200/80 shadow-inner">
           <button
             onClick={() => onSelectArchetype('household')}
-            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 rounded-md text-[11px] sm:text-xs font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-md text-xs font-semibold transition-all ${
               currentArchetype === 'household'
-                ? 'bg-white text-zinc-950 shadow-sm border border-zinc-200/60 font-semibold'
+                ? 'bg-white text-zinc-950 shadow-sm border border-zinc-200/60 font-bold'
                 : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/50'
             }`}
-            title="Household Emissions"
+            title="House (Household Emissions)"
           >
             <Home className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
-            <span className="inline sm:hidden">House</span>
-            <span className="hidden sm:inline">Household</span>
+            <span>House</span>
           </button>
 
           <button
             onClick={() => onSelectArchetype('agriculture')}
-            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 rounded-md text-[11px] sm:text-xs font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-md text-xs font-semibold transition-all ${
               currentArchetype === 'agriculture'
-                ? 'bg-white text-zinc-950 shadow-sm border border-zinc-200/60 font-semibold'
+                ? 'bg-white text-zinc-950 shadow-sm border border-zinc-200/60 font-bold'
                 : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/50'
             }`}
-            title="Agriculture & Farm"
+            title="Farmers (Agriculture Emissions)"
           >
             <Wheat className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
-            <span className="inline sm:hidden">Farm</span>
-            <span className="hidden sm:inline">Agriculture</span>
+            <span>Farmers</span>
           </button>
 
           <button
             onClick={() => onSelectArchetype('corporate')}
-            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 rounded-md text-[11px] sm:text-xs font-medium transition-all ${
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-md text-xs font-semibold transition-all ${
               currentArchetype === 'corporate'
-                ? 'bg-white text-zinc-950 shadow-sm border border-zinc-200/60 font-semibold'
+                ? 'bg-white text-zinc-950 shadow-sm border border-zinc-200/60 font-bold'
                 : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/50'
             }`}
-            title="Corporate & Industry"
+            title="Industry (Corporate Emissions)"
           >
             <Building2 className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
-            <span className="inline sm:hidden">Corp</span>
-            <span className="hidden sm:inline">Corporate</span>
+            <span>Industry</span>
           </button>
         </div>
 

@@ -36,34 +36,34 @@ export function CalculatorExperience() {
             </div>
           </div>
 
-          {/* Two-Pill Side-by-Side Segmented Mode Switcher */}
+          {/* Two-Pill Segmented Mode Switcher: Personal Use vs Serious Users & Professionals */}
           <div className="flex items-center p-1 bg-zinc-100 rounded-xl border border-zinc-200 shadow-inner w-full md:w-auto">
-            {/* Tab 1: Quick Household Estimate (Active by default) */}
+            {/* Tab 1: Personal Use */}
             <button
               type="button"
               onClick={() => setMode('quick')}
-              className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+              className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
                 mode === 'quick'
                   ? 'bg-white text-emerald-950 shadow-sm border border-zinc-200/90 font-extrabold'
                   : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/50'
               }`}
             >
               <Zap className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${mode === 'quick' ? 'text-amber-500 fill-amber-500' : 'text-zinc-500'}`} />
-              <span className="whitespace-nowrap">⚡ Quick Household Estimate (60s)</span>
+              <span className="whitespace-nowrap">Personal Use</span>
             </button>
 
-            {/* Tab 2: Registry-Grade Audit & Issuance */}
+            {/* Tab 2: Serious Users & Professionals */}
             <button
               type="button"
               onClick={() => setMode('audit')}
-              className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+              className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
                 mode === 'audit'
                   ? 'bg-white text-zinc-950 shadow-sm border border-zinc-200/90 font-extrabold'
                   : 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200/50'
               }`}
             >
               <ShieldCheck className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${mode === 'audit' ? 'text-emerald-700' : 'text-zinc-500'}`} />
-              <span className="whitespace-nowrap">🏛️ Registry-Grade Audit &amp; Issuance (Corporate, Farmers &amp; BEE)</span>
+              <span className="whitespace-nowrap">Serious Users &amp; Professionals</span>
             </button>
           </div>
         </div>
