@@ -44,6 +44,7 @@ import { REGIONAL_GRID_PRESETS } from '../../engine/factors';
 import { RegionalGridKey } from '../../types';
 
 interface QuickHouseholdCalculatorProps {
+  mode?: 'awareness' | 'precision';
   onSwitchToAudit?: () => void;
 }
 
@@ -123,7 +124,15 @@ export const REGIONAL_LIFECYCLE_PROFILES: Record<
   },
 };
 
-export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalculatorProps) {
+export function QuickHouseholdCalculator({ mode = 'awareness', onSwitchToAudit }: QuickHouseholdCalculatorProps) {
+  const isAwareness = mode === 'awareness';
+  const [activePresetKey, setActivePresetKey] = useState<'urban_commuter' | 'family_household' | 'zero'>(
+    isAwareness ? 'urban_commuter' : 'zero'
+  );
+
+  // Expand toggle for retirement flow when footprint <= 0
+  const [expandRetirementPreview, setExpandRetirementPreview] = useState<boolean>(false);
+
   // =========================================================================
   // SYSTEM BOUNDARY MODE (TTW Operational vs Full Lifecycle WTW + T&D Losses)
   // =========================================================================
@@ -138,7 +147,7 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   // 2. HOME ENERGY (ELECTRICITY, HEATING & COOKING)
   // =========================================================================
   // Electricity
-  const [electricityKwh, setElectricityKwh] = useState<number>(0);
+  const [electricityKwh, setElectricityKwh] = useState<number>(isAwareness ? 250 : 0);
   const [gridKey, setGridKey] = useState<RegionalGridKey>('india_cea');
   const [useCustomGridFactor, setUseCustomGridFactor] = useState<boolean>(false);
   const [customGridFactor, setCustomGridFactor] = useState<number>(0.716);
@@ -154,12 +163,12 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   const [customHeatingFuelEfEnabled, setCustomHeatingFuelEfEnabled] = useState<boolean>(false);
   const [customHeatingFuelEf, setCustomHeatingFuelEf] = useState<number>(2.02);
 
-  // Cooking (Default: None / 0)
-  const [cookingFuel, setCookingFuel] = useState<CookingFuelType>('none');
+  // Cooking (Default: None / 0 in precision, PNG in awareness)
+  const [cookingFuel, setCookingFuel] = useState<CookingFuelType>(isAwareness ? 'png' : 'none');
   const [lpgCylindersMonth, setLpgCylindersMonth] = useState<number>(0);
   const [useExactLpgKg, setUseExactLpgKg] = useState<boolean>(false);
   const [exactLpgKgMonth, setExactLpgKgMonth] = useState<number>(0);
-  const [pngM3Month, setPngM3Month] = useState<number>(0);
+  const [pngM3Month, setPngM3Month] = useState<number>(isAwareness ? 14 : 0);
   const [biogasM3Month, setBiogasM3Month] = useState<number>(0);
   const [customCookingEfEnabled, setCustomCookingEfEnabled] = useState<boolean>(false);
   const [customLpgEf, setCustomLpgEf] = useState<number>(2.983);
@@ -168,27 +177,52 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   // =========================================================================
   // 3. ROAD & PUBLIC TRANSPORT (MULTI-LEG BUILDER)
   // =========================================================================
-  const [commuteLegs, setCommuteLegs] = useState<CommuteLeg[]>([
-    {
-      id: 'leg-1',
-      name: 'Primary Daily Commute',
-      mode: 'metro_rail',
-      method: 'distance',
-      weeklyKm: 0,
-      efficiency: 0,
-      fuelLitersMonth: 0,
-      occupancy: 1,
-      useCustomEf: false,
-      customEf: 0.035,
-    },
-  ]);
+  const [commuteLegs, setCommuteLegs] = useState<CommuteLeg[]>(
+    isAwareness
+      ? [
+          {
+            id: 'leg-1',
+            name: 'Metro Commute',
+            mode: 'metro_rail',
+            method: 'distance',
+            weeklyKm: 60,
+            efficiency: 0,
+            fuelLitersMonth: 0,
+            occupancy: 1,
+          },
+          {
+            id: 'leg-2',
+            name: 'Local Bus Connection',
+            mode: 'public_bus',
+            method: 'distance',
+            weeklyKm: 25,
+            efficiency: 0,
+            fuelLitersMonth: 0,
+            occupancy: 1,
+          },
+        ]
+      : [
+          {
+            id: 'leg-1',
+            name: 'Primary Daily Commute',
+            mode: 'bicycle_walk',
+            method: 'distance',
+            weeklyKm: 0,
+            efficiency: 0,
+            fuelLitersMonth: 0,
+            occupancy: 1,
+            useCustomEf: false,
+            customEf: 0,
+          },
+        ]
+  );
 
   // =========================================================================
   // 4. AVIATION (PASSENGER DISTANCE, ROUTE CLASS & OPTIONAL NON-CO2)
   // =========================================================================
-  const [aviationMode, setAviationMode] = useState<'exact_km' | 'counts'>('exact_km');
+  const [aviationMode, setAviationMode] = useState<'exact_km' | 'counts'>(isAwareness ? 'counts' : 'exact_km');
   const [exactFlightKmYear, setExactFlightKmYear] = useState<number>(0);
-  const [shortHaulFlights, setShortHaulFlights] = useState<number>(0);
+  const [shortHaulFlights, setShortHaulFlights] = useState<number>(isAwareness ? 2 : 0);
   const [longHaulFlights, setLongHaulFlights] = useState<number>(0);
   const [flightRouteClass, setFlightRouteClass] = useState<'short_econ' | 'long_econ' | 'business_first' | 'custom'>('short_econ');
   const [customAviationEf, setCustomAviationEf] = useState<number>(0.115);
@@ -197,11 +231,11 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   // =========================================================================
   // 5. FOOD & DIET (MASS IN KG × EF — OPT-IN, DEFAULT 0)
   // =========================================================================
-  const [includeFood, setIncludeFood] = useState<boolean>(false);
-  const [beefLambKgMonth, setBeefLambKgMonth] = useState<number>(0);
-  const [porkPoultryKgMonth, setPorkPoultryKgMonth] = useState<number>(0);
-  const [dairyCheeseKgMonth, setDairyCheeseKgMonth] = useState<number>(0);
-  const [plantGrainsKgMonth, setPlantGrainsKgMonth] = useState<number>(0);
+  const [includeFood, setIncludeFood] = useState<boolean>(isAwareness);
+  const [beefLambKgMonth, setBeefLambKgMonth] = useState<number>(isAwareness ? 1 : 0);
+  const [porkPoultryKgMonth, setPorkPoultryKgMonth] = useState<number>(isAwareness ? 4 : 0);
+  const [dairyCheeseKgMonth, setDairyCheeseKgMonth] = useState<number>(isAwareness ? 8 : 0);
+  const [plantGrainsKgMonth, setPlantGrainsKgMonth] = useState<number>(isAwareness ? 25 : 0);
   const [customFoodEfEnabled, setCustomFoodEfEnabled] = useState<boolean>(false);
   const [customBeefEf, setCustomBeefEf] = useState<number>(27.0);
   const [customPoultryEf, setCustomPoultryEf] = useState<number>(6.9);
@@ -211,13 +245,13 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   // =========================================================================
   // 6. GOODS & SERVICES (LIFECYCLE QUANTITY PREFERRED / SPEND FALLBACK — DEFAULT 0)
   // =========================================================================
-  const [includeGoods, setIncludeGoods] = useState<boolean>(false);
+  const [includeGoods, setIncludeGoods] = useState<boolean>(isAwareness);
   const [goodsMode, setGoodsMode] = useState<'lifecycle_qty' | 'spend'>('lifecycle_qty');
   // Lifecycle Quantity inputs
-  const [smartphonesQtyYear, setSmartphonesQtyYear] = useState<number>(0);
+  const [smartphonesQtyYear, setSmartphonesQtyYear] = useState<number>(isAwareness ? 1 : 0);
   const [laptopsQtyYear, setLaptopsQtyYear] = useState<number>(0);
-  const [clothingItemsYear, setClothingItemsYear] = useState<number>(0);
-  const [footwearPairsYear, setFootwearPairsYear] = useState<number>(0);
+  const [clothingItemsYear, setClothingItemsYear] = useState<number>(isAwareness ? 8 : 0);
+  const [footwearPairsYear, setFootwearPairsYear] = useState<number>(isAwareness ? 2 : 0);
   const [customGoodsEfEnabled, setCustomGoodsEfEnabled] = useState<boolean>(false);
   const [customPhoneEf, setCustomPhoneEf] = useState<number>(70.0);
   const [customLaptopEf, setCustomLaptopEf] = useState<number>(250.0);
@@ -232,9 +266,9 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   // =========================================================================
   // 7. WATER & MUNICIPAL WASTE (OPT-IN, DEFAULT 0)
   // =========================================================================
-  const [includeWaterWaste, setIncludeWaterWaste] = useState<boolean>(false);
-  const [waterM3Month, setWaterM3Month] = useState<number>(0);
-  const [wasteKgWeek, setWasteKgWeek] = useState<number>(0);
+  const [includeWaterWaste, setIncludeWaterWaste] = useState<boolean>(isAwareness);
+  const [waterM3Month, setWaterM3Month] = useState<number>(isAwareness ? 8 : 0);
+  const [wasteKgWeek, setWasteKgWeek] = useState<number>(isAwareness ? 4 : 0);
   const [customWaterWasteEfEnabled, setCustomWaterWasteEfEnabled] = useState<boolean>(false);
   const [customWaterEf, setCustomWaterEf] = useState<number>(1.052);
   const [customWasteEf, setCustomWasteEf] = useState<number>(0.586);
@@ -319,7 +353,8 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   };
 
   // Quick Archetype Presets
-  const applyPreset = (preset: 'zero' | 'urban_professional' | 'rural_homestead') => {
+  const applyPreset = (preset: 'zero' | 'urban_commuter' | 'family_household') => {
+    setActivePresetKey(preset);
     if (preset === 'zero') {
       setResidents(1);
       setElectricityKwh(0);
@@ -344,6 +379,7 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
           occupancy: 1,
         },
       ]);
+      setAviationMode('exact_km');
       setExactFlightKmYear(0);
       setShortHaulFlights(0);
       setLongHaulFlights(0);
@@ -362,8 +398,8 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
       setIncludeWaterWaste(false);
       setWaterM3Month(0);
       setWasteKgWeek(0);
-    } else if (preset === 'urban_professional') {
-      setResidents(2);
+    } else if (preset === 'urban_commuter') {
+      setResidents(1);
       setElectricityKwh(250);
       setIncludeHeating(false);
       setCookingFuel('png');
@@ -375,6 +411,16 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
           mode: 'metro_rail',
           method: 'distance',
           weeklyKm: 60,
+          efficiency: 0,
+          fuelLitersMonth: 0,
+          occupancy: 1,
+        },
+        {
+          id: 'leg-2',
+          name: 'Local Bus Connection',
+          mode: 'public_bus',
+          method: 'distance',
+          weeklyKm: 25,
           efficiency: 0,
           fuelLitersMonth: 0,
           occupancy: 1,
@@ -393,38 +439,58 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
       setGoodsMode('lifecycle_qty');
       setSmartphonesQtyYear(1);
       setClothingItemsYear(8);
+      setLaptopsQtyYear(0);
+      setFootwearPairsYear(2);
       setIncludeWaterWaste(true);
       setWaterM3Month(8);
       setWasteKgWeek(4);
-    } else if (preset === 'rural_homestead') {
+    } else if (preset === 'family_household') {
       setResidents(4);
-      setElectricityKwh(120);
+      setElectricityKwh(450);
       setIncludeHeating(false);
-      setCookingFuel('biogas');
-      setBiogasM3Month(25);
+      setCookingFuel('lpg');
+      setUseExactLpgKg(false);
+      setLpgCylindersMonth(1.5);
       setCommuteLegs([
         {
           id: 'leg-1',
-          name: 'Local Transport',
-          mode: 'two_wheeler',
+          name: 'Family Car Commute',
+          mode: 'petrol_car',
           method: 'distance',
-          weeklyKm: 30,
-          efficiency: 2.5,
+          weeklyKm: 120,
+          efficiency: 7.5,
+          fuelLitersMonth: 0,
+          occupancy: 2,
+        },
+        {
+          id: 'leg-2',
+          name: 'School / Local Bus',
+          mode: 'public_bus',
+          method: 'distance',
+          weeklyKm: 40,
+          efficiency: 0,
           fuelLitersMonth: 0,
           occupancy: 1,
         },
       ]);
-      setExactFlightKmYear(0);
-      setShortHaulFlights(0);
-      setLongHaulFlights(0);
+      setAviationMode('counts');
+      setShortHaulFlights(4);
+      setLongHaulFlights(1);
       setIncludeRadiativeForcing(false);
       setIncludeFood(true);
-      setBeefLambKgMonth(0);
-      setPorkPoultryKgMonth(2);
-      setDairyCheeseKgMonth(10);
-      setPlantGrainsKgMonth(35);
-      setIncludeGoods(false);
-      setIncludeWaterWaste(false);
+      setBeefLambKgMonth(2);
+      setPorkPoultryKgMonth(8);
+      setDairyCheeseKgMonth(16);
+      setPlantGrainsKgMonth(40);
+      setIncludeGoods(true);
+      setGoodsMode('lifecycle_qty');
+      setSmartphonesQtyYear(1);
+      setLaptopsQtyYear(1);
+      setClothingItemsYear(20);
+      setFootwearPairsYear(4);
+      setIncludeWaterWaste(true);
+      setWaterM3Month(18);
+      setWasteKgWeek(10);
     }
   };
 
@@ -1121,50 +1187,94 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
   return (
     <div className="space-y-8 animate-fadeIn pb-20 md:pb-0 w-full max-w-full overflow-x-hidden">
       {/* ============================================================== */}
-      {/* TOP BANNER: KTH BOUNDARY RULES & ZERO FORCED DEFAULTS */}
       {/* ============================================================== */}
-      <div className="bg-emerald-950 text-white rounded-2xl p-4 sm:p-6 shadow-xs border border-emerald-800/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-300">
-              KTH Lifecycle Precision Engine · Zero Forced Defaults
-            </span>
+      {/* TOP BANNER: KTH BOUNDARY RULES & VISIBLE QUICK-START BAR */}
+      {/* ============================================================== */}
+      <div className="bg-emerald-950 text-white rounded-2xl p-4 sm:p-6 shadow-sm border border-emerald-800/80 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-300">
+                {isAwareness ? 'Everyday Awareness Mode · Realistic Starting Profiles' : 'KTH Lifecycle Precision Engine · Zero Forced Defaults'}
+              </span>
+            </div>
+            <h2 className="text-lg sm:text-xl font-bold tracking-tight text-white">
+              Personal &amp; Household Carbon Assessment
+            </h2>
+            <p className="text-xs text-emerald-200/80 max-w-2xl mt-0.5 leading-relaxed">
+              Deterministic double-precision accounting. Strictly separates shared household utilities (divided by residents) from 100% personal transit, flights, diet, and manufactured goods.
+            </p>
           </div>
-          <h2 className="text-lg sm:text-xl font-bold tracking-tight text-white">
-            Personal &amp; Household Carbon Assessment
-          </h2>
-          <p className="text-xs text-emerald-200/80 max-w-2xl mt-0.5 leading-relaxed">
-            Deterministic double-precision accounting. Strictly separates shared household utilities (divided by residents) from 100% personal transit, flights, diet, and manufactured goods.
-          </p>
         </div>
 
-        {/* Quick Archetype Loaders */}
-        <div className="flex items-center gap-2 flex-wrap shrink-0">
-          <span className="text-[11px] font-mono text-emerald-300/80 mr-1 hidden sm:inline">Presets:</span>
-          <button
-            type="button"
-            onClick={() => applyPreset('zero')}
-            className="px-2.5 py-1.5 rounded-lg bg-emerald-900/80 hover:bg-emerald-800 text-[11px] font-mono font-bold text-white border border-emerald-700/60 transition flex items-center gap-1"
-            title="Reset all fields to exact 0"
-          >
-            <RotateCcw className="w-3 h-3 text-emerald-400" />
-            <span>Zero Baseline</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => applyPreset('urban_professional')}
-            className="px-2.5 py-1.5 rounded-lg bg-emerald-800/80 hover:bg-emerald-700 text-[11px] font-mono font-bold text-emerald-100 border border-emerald-600/60 transition"
-          >
-            Urban Pro
-          </button>
-          <button
-            type="button"
-            onClick={() => applyPreset('rural_homestead')}
-            className="px-2.5 py-1.5 rounded-lg bg-emerald-800/80 hover:bg-emerald-700 text-[11px] font-mono font-bold text-emerald-100 border border-emerald-600/60 transition"
-          >
-            Homestead
-          </button>
+        {/* Prominent 3-Button Quick-Start Archetype Bar */}
+        <div className="pt-3 border-t border-emerald-800/80">
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-2.5">
+            <span className="text-xs font-bold text-emerald-200 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              Choose a Starting Profile:
+            </span>
+            <span className="text-[11px] font-mono text-emerald-300/70">
+              All parameters remain fully editable below
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {/* Archetype 1: Typical Urban Commuter */}
+            <button
+              type="button"
+              onClick={() => applyPreset('urban_commuter')}
+              className={`p-3 rounded-xl border text-left transition-all ${
+                activePresetKey === 'urban_commuter'
+                  ? 'bg-emerald-900 border-emerald-400 text-white shadow-sm ring-1 ring-emerald-400'
+                  : 'bg-emerald-900/40 hover:bg-emerald-900/80 border-emerald-700/60 text-emerald-100'
+              }`}
+            >
+              <div className="font-bold text-xs sm:text-sm text-white">
+                Typical Urban Commuter
+              </div>
+              <p className="text-[11px] text-emerald-200/70 mt-1 leading-snug">
+                1 resident, 250 kWh, metro &amp; bus commute, flexitarian diet
+              </p>
+            </button>
+
+            {/* Archetype 2: Family Household */}
+            <button
+              type="button"
+              onClick={() => applyPreset('family_household')}
+              className={`p-3 rounded-xl border text-left transition-all ${
+                activePresetKey === 'family_household'
+                  ? 'bg-emerald-900 border-emerald-400 text-white shadow-sm ring-1 ring-emerald-400'
+                  : 'bg-emerald-900/40 hover:bg-emerald-900/80 border-emerald-700/60 text-emerald-100'
+              }`}
+            >
+              <div className="font-bold text-xs sm:text-sm text-white">
+                Family Household (4 Residents)
+              </div>
+              <p className="text-[11px] text-emerald-200/70 mt-1 leading-snug">
+                4 residents, 450 kWh, LPG cooking, carpooling, omnivore diet
+              </p>
+            </button>
+
+            {/* Archetype 3: Zero Baseline */}
+            <button
+              type="button"
+              onClick={() => applyPreset('zero')}
+              className={`p-3 rounded-xl border text-left transition-all ${
+                activePresetKey === 'zero'
+                  ? 'bg-emerald-900 border-emerald-400 text-white shadow-sm ring-1 ring-emerald-400'
+                  : 'bg-emerald-900/40 hover:bg-emerald-900/80 border-emerald-700/60 text-emerald-100'
+              }`}
+            >
+              <div className="font-bold text-xs sm:text-sm text-white flex items-center gap-1.5">
+                <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Zero Baseline (Strict Audit Start)</span>
+              </div>
+              <p className="text-[11px] text-emerald-200/70 mt-1 leading-snug">
+                Resets all activity lines to exact 0.000 for strict verification
+              </p>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1238,9 +1348,14 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                 <div className="p-1.5 bg-emerald-100 text-emerald-800 rounded-lg">
                   <Users className="w-4 h-4" />
                 </div>
-                <h3 className="text-base font-bold text-zinc-900">
-                  1. Shared Household Allocation
-                </h3>
+                <div>
+                  <h3 className="text-base font-bold text-zinc-900">
+                    1. Shared Household Allocation
+                  </h3>
+                  <p className="text-xs text-zinc-500 font-normal mt-0.5">
+                    Divides shared home energy evenly among everyone living in your home.
+                  </p>
+                </div>
               </div>
               <span className="text-[11px] font-mono text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
                 Allocation Share: {(calculation.allocationShare * 100).toFixed(1)}%
@@ -1280,9 +1395,14 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                 <div className="p-1.5 bg-amber-100 text-amber-800 rounded-lg">
                   <Zap className="w-4 h-4" />
                 </div>
-                <h3 className="text-base font-bold text-zinc-900">
-                  2. Home Energy (Electricity, Heating &amp; Cooking)
-                </h3>
+                <div>
+                  <h3 className="text-base font-bold text-zinc-900">
+                    2. Home Energy (Electricity, Heating &amp; Cooking)
+                  </h3>
+                  <p className="text-xs text-zinc-500 font-normal mt-0.5">
+                    Your monthly electricity and heating consumption.
+                  </p>
+                </div>
               </div>
 
               {/* Grid Preset Dropdown */}
@@ -1766,7 +1886,10 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                   <h3 className="text-base font-bold text-zinc-900">
                     3. Road &amp; Public Transport
                   </h3>
-                  <span className="text-[11px] text-zinc-500">
+                  <p className="text-xs text-zinc-500 font-normal mt-0.5">
+                    Your weekly commuting routines, car travel, and public transit.
+                  </p>
+                  <span className="text-[11px] text-zinc-500 font-mono">
                     Dynamic Regional Electric Rail · Strict Fuel-vs-Distance XOR Boundary
                   </span>
                 </div>
@@ -1795,14 +1918,14 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                         onChange={(e) => updateCommuteLeg(leg.id, { mode: e.target.value as TransitMode })}
                         className="bg-white border border-zinc-300 rounded px-2 py-1 font-medium text-zinc-900 text-xs"
                       >
-                        <option value="bicycle_walk">🚶 Bicycle / Walk (0.000 kg/km)</option>
-                        <option value="metro_rail">🚇 Metro Rail (Dynamic: {dynamicMetroEf.toFixed(3)} kg/pkm)</option>
-                        <option value="commuter_train">🚆 Commuter Train (Dynamic: {dynamicCommuterTrainEf.toFixed(3)} kg/pkm)</option>
-                        <option value="public_bus">🚌 Public Bus (0.089 kg/km)</option>
-                        <option value="ev">⚡ Electric Vehicle (EV)</option>
-                        <option value="two_wheeler">🛵 Motorcycle / Scooter (Two-Wheeler)</option>
-                        <option value="petrol_car">🚗 Petrol Automobile</option>
-                        <option value="diesel_car">🚙 Diesel Automobile</option>
+                        <option value="bicycle_walk">Bicycle / Walk (0.000 kg/km)</option>
+                        <option value="metro_rail">Metro Rail (Dynamic: {dynamicMetroEf.toFixed(3)} kg/pkm)</option>
+                        <option value="commuter_train">Commuter Train (Dynamic: {dynamicCommuterTrainEf.toFixed(3)} kg/pkm)</option>
+                        <option value="public_bus">Public Bus (0.089 kg/km)</option>
+                        <option value="ev">Electric Vehicle (EV)</option>
+                        <option value="two_wheeler">Motorcycle / Scooter (Two-Wheeler)</option>
+                        <option value="petrol_car">Petrol Automobile</option>
+                        <option value="diesel_car">Diesel Automobile</option>
                       </select>
                     </div>
 
@@ -2013,9 +2136,14 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                 <div className="p-1.5 bg-sky-100 text-sky-800 rounded-lg">
                   <Plane className="w-4 h-4" />
                 </div>
-                <h3 className="text-base font-bold text-zinc-900">
-                  4. Commercial Passenger Aviation
-                </h3>
+                <div>
+                  <h3 className="text-base font-bold text-zinc-900">
+                    4. Commercial Passenger Aviation
+                  </h3>
+                  <p className="text-xs text-zinc-500 font-normal mt-0.5">
+                    Flights taken over the past 12 months.
+                  </p>
+                </div>
               </div>
               <div className="flex bg-zinc-100 p-0.5 rounded-lg border border-zinc-200">
                 <button
@@ -2170,9 +2298,14 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                 <div className="p-1.5 bg-emerald-100 text-emerald-800 rounded-lg">
                   <Utensils className="w-4 h-4" />
                 </div>
-                <h3 className="text-base font-bold text-zinc-900">
-                  5. Food &amp; Diet (Mass in kg × Lifecycle EF)
-                </h3>
+                <div>
+                  <h3 className="text-base font-bold text-zinc-900">
+                    5. Food &amp; Diet (Mass in kg × Lifecycle EF)
+                  </h3>
+                  <p className="text-xs text-zinc-500 font-normal mt-0.5">
+                    Primary food consumption patterns based on life-cycle agricultural footprints.
+                  </p>
+                </div>
               </div>
               <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-zinc-800">
                 <input
@@ -2384,9 +2517,14 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                 <div className="p-1.5 bg-purple-100 text-purple-800 rounded-lg">
                   <ShoppingBag className="w-4 h-4" />
                 </div>
-                <h3 className="text-base font-bold text-zinc-900">
-                  6. Manufactured Goods &amp; Discretionary Services
-                </h3>
+                <div>
+                  <h3 className="text-base font-bold text-zinc-900">
+                    6. Manufactured Goods &amp; Discretionary Services
+                  </h3>
+                  <p className="text-xs text-zinc-500 font-normal mt-0.5">
+                    Manufactured goods, electronics, and clothing purchased this year.
+                  </p>
+                </div>
               </div>
               <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-zinc-800">
                 <input
@@ -2559,9 +2697,14 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
                 <div className="p-1.5 bg-cyan-100 text-cyan-800 rounded-lg">
                   <Droplet className="w-4 h-4" />
                 </div>
-                <h3 className="text-base font-bold text-zinc-900">
-                  7. Municipal Water &amp; Solid Waste (Opt-In)
-                </h3>
+                <div>
+                  <h3 className="text-base font-bold text-zinc-900">
+                    7. Municipal Water &amp; Solid Waste (Opt-In)
+                  </h3>
+                  <p className="text-xs text-zinc-500 font-normal mt-0.5">
+                    Domestic utility consumption and landfill diversion.
+                  </p>
+                </div>
               </div>
               <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-zinc-800">
                 <input
@@ -2672,7 +2815,7 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
         </div>
 
         {/* Right Column: Instant Result Card & Breakdown */}
-        <div className="lg:col-span-5 space-y-6 lg:sticky lg:top-24">
+        <div className="lg:col-span-5 space-y-6 lg:sticky lg:top-6 self-start">
           <div className="bg-gradient-to-br from-[#0F3A2E] to-[#0A261E] text-white rounded-2xl p-5 sm:p-7 shadow-lg space-y-6">
             <div className="border-b border-emerald-800/80 pb-4">
               <div className="flex items-center justify-between mb-1">
@@ -2935,197 +3078,281 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
           </p>
         </div>
 
-        {/* Project Selector (3 Verified Options) */}
-        <div>
-          <label className="text-xs font-bold text-zinc-800 uppercase tracking-wide block mb-3">
-            Step 1: Select Verified Registry Project
-          </label>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Project 1 */}
-            <div
-              onClick={() => setSelectedProjectId('india_renewables')}
-              className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                selectedProjectId === 'india_renewables'
-                  ? 'border-emerald-700 bg-emerald-50/40 shadow-sm'
-                  : 'border-zinc-200 hover:border-zinc-300 bg-zinc-50/50'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
-                  Verra VCS / BEE
-                </span>
-                <span className="text-xs font-bold text-zinc-900 font-mono">$12.50 / t</span>
-              </div>
-              <h4 className="text-xs font-bold text-zinc-900 mb-1">
-                India Bundled Solar &amp; Wind Clean Grid
-              </h4>
-              <p className="text-[11px] text-zinc-500 leading-relaxed">
-                Displaces fossil thermal coal power from the Indian national grid. Verified under UNFCCC CDM ACM0002.
-              </p>
-            </div>
-
-            {/* Project 2 */}
-            <div
-              onClick={() => setSelectedProjectId('verra_vm0042_soil')}
-              className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                selectedProjectId === 'verra_vm0042_soil'
-                  ? 'border-emerald-700 bg-emerald-50/40 shadow-sm'
-                  : 'border-zinc-200 hover:border-zinc-300 bg-zinc-50/50'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded">
-                  Verra VM0042
-                </span>
-                <span className="text-xs font-bold text-zinc-900 font-mono">$18.00 / t</span>
-              </div>
-              <h4 className="text-xs font-bold text-zinc-900 mb-1">
-                Regenerative Soil &amp; Agroforestry Removals
-              </h4>
-              <p className="text-[11px] text-zinc-500 leading-relaxed">
-                High-permanence soil organic carbon enhancement and smallholder tree biomass sequestration.
-              </p>
-            </div>
-
-            {/* Project 3 */}
-            <div
-              onClick={() => setSelectedProjectId('gold_standard_cookstoves')}
-              className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                selectedProjectId === 'gold_standard_cookstoves'
-                  ? 'border-emerald-700 bg-emerald-50/40 shadow-sm'
-                  : 'border-zinc-200 hover:border-zinc-300 bg-zinc-50/50'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-amber-100 text-amber-800 rounded">
-                  Gold Standard
-                </span>
-                <span className="text-xs font-bold text-zinc-900 font-mono">$15.00 / t</span>
-              </div>
-              <h4 className="text-xs font-bold text-zinc-900 mb-1">
-                Clean Cookstoves &amp; Rural Safe Water
-              </h4>
-              <p className="text-[11px] text-zinc-500 leading-relaxed">
-                Directly reduces firewood deforestation while improving family respiratory health in rural communities.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Step 2: Beneficiary Name & Generate Quote */}
-        <div className="bg-zinc-50 rounded-xl p-4 sm:p-5 border border-zinc-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex-1">
-            <label htmlFor="recipient-name" className="text-xs font-bold text-zinc-800 block mb-1">
-              Recipient Name for Certificate of Retirement
-            </label>
-            <input
-              id="recipient-name"
-              type="text"
-              value={beneficiaryName}
-              onChange={(e) => setBeneficiaryName(e.target.value)}
-              placeholder="Enter full name or household name"
-              className="w-full sm:max-w-md bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs font-medium text-zinc-900 focus:outline-none focus:ring-1 focus:ring-emerald-700"
-            />
-            <span className="text-[10px] text-zinc-400 mt-0.5 block">
-              This name will be permanently inscribed into the retirement certificate ledger.
-            </span>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleGetRetirementQuote}
-            disabled={isRetiring}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-sm transition"
-          >
-            {isRetiring ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Generating Quote &amp; Certificate...</span>
-              </>
-            ) : (
-              <>
-                <ShieldCheck className="w-4 h-4 text-emerald-200" />
-                <span>Generate Retirement Quote &amp; Certificate</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Retirement Quote Preview Modal / Drawer */}
-        {retirementQuote && (
-          <div className="p-5 sm:p-7 bg-zinc-900 text-white rounded-xl border border-zinc-800 shadow-xl space-y-5 animate-fadeIn">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-4 flex-wrap gap-2">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
-                  ✓
+        {calculation.totalPersonalTco2e <= 0 ? (
+          <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 sm:p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-zinc-200 text-zinc-600 rounded-lg shrink-0">
+                  <Info className="w-4 h-4" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-white">
-                    Retirement Commitment Prepared
+                  <h4 className="text-xs sm:text-sm font-bold text-zinc-800">
+                    Calculate a footprint above 0 tCO₂e to unlock verified offset retirement
                   </h4>
-                  <span className="text-[11px] font-mono text-zinc-400">
-                    Quote ID: {retirementQuote.quote_id}
-                  </span>
+                  <p className="text-[11px] text-zinc-500 mt-0.5">
+                    Your current assessed footprint is 0.000 tCO₂e. Enter household electricity, daily commute, or food patterns above to calculate required offset credits.
+                  </p>
                 </div>
               </div>
-              <span className="px-2.5 py-1 rounded bg-emerald-950 text-emerald-300 border border-emerald-700 font-mono text-xs font-bold">
-                {retirementQuote.retirement_summary.credits_to_retire} Credits = ${retirementQuote.pricing.total_usd.toFixed(2)} USD
-              </span>
+              <button
+                type="button"
+                onClick={() => setExpandRetirementPreview(!expandRetirementPreview)}
+                className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold underline shrink-0 text-left"
+              >
+                {expandRetirementPreview ? 'Collapse Marketplace Preview' : 'Preview Marketplace Projects'}
+              </button>
             </div>
 
-            {/* Official Certificate Preview */}
-            <div className="p-5 bg-zinc-950 border border-emerald-800/80 rounded-xl font-mono text-xs space-y-3 relative overflow-hidden">
-              <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300 border border-emerald-700/80 text-[10px] uppercase font-bold">
-                Official Specimen
-              </div>
-              <div className="text-emerald-400 font-bold uppercase tracking-widest text-[11px]">
-                International Carbon Registry · Certificate of Retirement
-              </div>
-              <div className="space-y-1 text-zinc-300">
-                <div>
-                  <span className="text-zinc-500">Beneficiary:</span> <strong>{retirementQuote.retirement_summary.beneficiary}</strong>
+            {expandRetirementPreview && (
+              <div className="pt-4 border-t border-zinc-200 space-y-4 animate-fadeIn">
+                <span className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider block">
+                  Registry Marketplace Projects (Inactive at 0.000 tCO₂e):
+                </span>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 opacity-70 pointer-events-none">
+                  {/* Project 1 */}
+                  <div className="p-4 rounded-xl border border-zinc-200 bg-white">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
+                        Verra VCS / BEE
+                      </span>
+                      <span className="text-xs font-bold text-zinc-900 font-mono">$12.50 / t</span>
+                    </div>
+                    <h4 className="text-xs font-bold text-zinc-900 mb-1">
+                      India Bundled Solar &amp; Wind Clean Grid
+                    </h4>
+                    <p className="text-[11px] text-zinc-500 leading-relaxed">
+                      Displaces fossil thermal coal power from the Indian national grid. Verified under UNFCCC CDM ACM0002.
+                    </p>
+                  </div>
+                  {/* Project 2 */}
+                  <div className="p-4 rounded-xl border border-zinc-200 bg-white">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded">
+                        Verra VM0042
+                      </span>
+                      <span className="text-xs font-bold text-zinc-900 font-mono">$18.00 / t</span>
+                    </div>
+                    <h4 className="text-xs font-bold text-zinc-900 mb-1">
+                      Regenerative Soil &amp; Agroforestry Removals
+                    </h4>
+                    <p className="text-[11px] text-zinc-500 leading-relaxed">
+                      High-permanence soil organic carbon enhancement and smallholder tree biomass sequestration.
+                    </p>
+                  </div>
+                  {/* Project 3 */}
+                  <div className="p-4 rounded-xl border border-zinc-200 bg-white">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-amber-100 text-amber-800 rounded">
+                        Gold Standard
+                      </span>
+                      <span className="text-xs font-bold text-zinc-900 font-mono">$15.00 / t</span>
+                    </div>
+                    <h4 className="text-xs font-bold text-zinc-900 mb-1">
+                      Clean Cookstoves &amp; Rural Safe Water
+                    </h4>
+                    <p className="text-[11px] text-zinc-500 leading-relaxed">
+                      Directly reduces firewood deforestation while improving family respiratory health in rural communities.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-zinc-500">Registry Project:</span> {retirementQuote.project.name} ({retirementQuote.project.standard})
-                </div>
-                <div>
-                  <span className="text-zinc-500">Permanent Volume:</span>{' '}
-                  <span className="text-emerald-400 font-bold">
-                    {retirementQuote.retirement_summary.credits_to_retire} Metric Tonnes CO₂e
-                  </span>
-                </div>
-                <div className="text-[11px] text-zinc-500 truncate">
-                  Batch: {retirementQuote.project.serial_number_preview}
-                </div>
               </div>
-            </div>
-
-            <div className="pt-2 border-t border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-              <span className="text-zinc-400 text-[11px]">
-                Proceed to live credit settlement via institutional marketplaces:
-              </span>
-              <div className="flex items-center gap-2 flex-wrap">
-                <a
-                  href={retirementQuote.settlement_options.carbonmark_marketplace_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold transition"
-                >
-                  <span>Settle on Carbonmark</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-                <a
-                  href={retirementQuote.settlement_options.climes_settlement_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 rounded text-xs font-semibold transition"
-                >
-                  <span>Settle on Climes.io</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              </div>
-            </div>
+            )}
           </div>
+        ) : (
+          <>
+            {/* Project Selector (3 Verified Options) */}
+            <div>
+              <label className="text-xs font-bold text-zinc-800 uppercase tracking-wide block mb-3">
+                Step 1: Select Verified Registry Project
+              </label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Project 1 */}
+                <div
+                  onClick={() => setSelectedProjectId('india_renewables')}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                    selectedProjectId === 'india_renewables'
+                      ? 'border-emerald-700 bg-emerald-50/40 shadow-sm'
+                      : 'border-zinc-200 hover:border-zinc-300 bg-zinc-50/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
+                      Verra VCS / BEE
+                    </span>
+                    <span className="text-xs font-bold text-zinc-900 font-mono">$12.50 / t</span>
+                  </div>
+                  <h4 className="text-xs font-bold text-zinc-900 mb-1">
+                    India Bundled Solar &amp; Wind Clean Grid
+                  </h4>
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">
+                    Displaces fossil thermal coal power from the Indian national grid. Verified under UNFCCC CDM ACM0002.
+                  </p>
+                </div>
+
+                {/* Project 2 */}
+                <div
+                  onClick={() => setSelectedProjectId('verra_vm0042_soil')}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                    selectedProjectId === 'verra_vm0042_soil'
+                      ? 'border-emerald-700 bg-emerald-50/40 shadow-sm'
+                      : 'border-zinc-200 hover:border-zinc-300 bg-zinc-50/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded">
+                      Verra VM0042
+                    </span>
+                    <span className="text-xs font-bold text-zinc-900 font-mono">$18.00 / t</span>
+                  </div>
+                  <h4 className="text-xs font-bold text-zinc-900 mb-1">
+                    Regenerative Soil &amp; Agroforestry Removals
+                  </h4>
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">
+                    High-permanence soil organic carbon enhancement and smallholder tree biomass sequestration.
+                  </p>
+                </div>
+
+                {/* Project 3 */}
+                <div
+                  onClick={() => setSelectedProjectId('gold_standard_cookstoves')}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                    selectedProjectId === 'gold_standard_cookstoves'
+                      ? 'border-emerald-700 bg-emerald-50/40 shadow-sm'
+                      : 'border-zinc-200 hover:border-zinc-300 bg-zinc-50/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-amber-100 text-amber-800 rounded">
+                      Gold Standard
+                    </span>
+                    <span className="text-xs font-bold text-zinc-900 font-mono">$15.00 / t</span>
+                  </div>
+                  <h4 className="text-xs font-bold text-zinc-900 mb-1">
+                    Clean Cookstoves &amp; Rural Safe Water
+                  </h4>
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">
+                    Directly reduces firewood deforestation while improving family respiratory health in rural communities.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 2: Beneficiary Name & Generate Quote */}
+            <div className="bg-zinc-50 rounded-xl p-4 sm:p-5 border border-zinc-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex-1">
+                <label htmlFor="recipient-name" className="text-xs font-bold text-zinc-800 block mb-1">
+                  Recipient Name for Certificate of Retirement
+                </label>
+                <input
+                  id="recipient-name"
+                  type="text"
+                  value={beneficiaryName}
+                  onChange={(e) => setBeneficiaryName(e.target.value)}
+                  placeholder="Enter full name or household name"
+                  className="w-full sm:max-w-md bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs font-medium text-zinc-900 focus:outline-none focus:ring-1 focus:ring-emerald-700"
+                />
+                <span className="text-[10px] text-zinc-400 mt-0.5 block">
+                  This name will be permanently inscribed into the retirement certificate ledger.
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleGetRetirementQuote}
+                disabled={isRetiring}
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-sm transition"
+              >
+                {isRetiring ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Generating Quote &amp; Certificate...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4 text-emerald-200" />
+                    <span>Generate Retirement Quote &amp; Certificate</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Retirement Quote Preview Modal / Drawer */}
+            {retirementQuote && (
+              <div className="p-5 sm:p-7 bg-zinc-900 text-white rounded-xl border border-zinc-800 shadow-xl space-y-5 animate-fadeIn">
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-4 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                      ✓
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">
+                        Retirement Commitment Prepared
+                      </h4>
+                      <span className="text-[11px] font-mono text-zinc-400">
+                        Quote ID: {retirementQuote.quote_id}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded bg-emerald-950 text-emerald-300 border border-emerald-700 font-mono text-xs font-bold">
+                    {retirementQuote.retirement_summary.credits_to_retire} Credits = ${retirementQuote.pricing.total_usd.toFixed(2)} USD
+                  </span>
+                </div>
+
+                {/* Official Certificate Preview */}
+                <div className="p-5 bg-zinc-950 border border-emerald-800/80 rounded-xl font-mono text-xs space-y-3 relative overflow-hidden">
+                  <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300 border border-emerald-700/80 text-[10px] uppercase font-bold">
+                    Official Specimen
+                  </div>
+                  <div className="text-emerald-400 font-bold uppercase tracking-widest text-[11px]">
+                    International Carbon Registry · Certificate of Retirement
+                  </div>
+                  <div className="space-y-1 text-zinc-300">
+                    <div>
+                      <span className="text-zinc-500">Beneficiary:</span> <strong>{retirementQuote.retirement_summary.beneficiary}</strong>
+                    </div>
+                    <div>
+                      <span className="text-zinc-500">Registry Project:</span> {retirementQuote.project.name} ({retirementQuote.project.standard})
+                    </div>
+                    <div>
+                      <span className="text-zinc-500">Permanent Volume:</span>{' '}
+                      <span className="text-emerald-400 font-bold">
+                        {retirementQuote.retirement_summary.credits_to_retire} Metric Tonnes CO₂e
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-zinc-500 truncate">
+                      Batch: {retirementQuote.project.serial_number_preview}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                  <span className="text-zinc-400 text-[11px]">
+                    Proceed to live credit settlement via institutional marketplaces:
+                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <a
+                      href={retirementQuote.settlement_options.carbonmark_marketplace_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold transition"
+                    >
+                      <span>Settle on Carbonmark</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                    <a
+                      href={retirementQuote.settlement_options.climes_settlement_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 rounded text-xs font-semibold transition"
+                    >
+                      <span>Settle on Climes.io</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -3153,7 +3380,10 @@ export function QuickHouseholdCalculator({ onSwitchToAudit }: QuickHouseholdCalc
           </div>
           <a
             href="#retire-section"
-            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold transition shadow-sm"
+            className={`px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold transition shadow-sm ${
+              calculation.totalPersonalTco2e <= 0 ? 'opacity-50 pointer-events-none cursor-not-allowed' : ''
+            }`}
+            aria-disabled={calculation.totalPersonalTco2e <= 0}
           >
             Retire
           </a>

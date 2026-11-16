@@ -91,7 +91,7 @@ const faqPageSchema = {
 
 export default function Page() {
   return (
-    <main className="w-full max-w-full overflow-x-hidden">
+    <main className="w-full max-w-full overflow-x-hidden pb-24 md:pb-8">
       {/* Schema.org Structured Data */}
       <script
         type="application/ld+json"
@@ -107,10 +107,11 @@ export default function Page() {
 
       {/* Semantic Server-Side Rendered Content for AI Agents & Search Engines */}
       <section
-        id="methodology-and-audit"
-        className="border-t border-zinc-200 bg-white py-12 sm:py-16 text-zinc-900"
+        id="methodology-section"
+        className="border-t border-zinc-200 bg-white py-12 sm:py-16 text-zinc-900 scroll-mt-20"
         aria-label="Accounting Methodology, Statutory Emission Factors, and AI Agent Documentation"
       >
+        <div id="methodology-and-audit" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           {/* Header Banner */}
           <div className="border-b border-zinc-200 pb-8 mb-10">
